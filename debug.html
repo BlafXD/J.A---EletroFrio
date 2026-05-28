@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Galileo Watch · debug</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Bricolage+Grotesque:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="css/reset.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <style>
+      body {
+        font-family: var(--font-mono);
+        padding: 28px;
+        max-width: 1200px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-family: var(--font-display);
+        font-size: 22px;
+        font-weight: 500;
+        margin-bottom: 6px;
+      }
+      .sub {
+        color: var(--fg-dim);
+        font-size: 12px;
+        margin-bottom: 24px;
+      }
+      .section {
+        background: var(--bg-elev-1);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 18px;
+      }
+      .section h2 {
+        font-family: var(--font-display);
+        font-size: 16px;
+        margin-bottom: 8px;
+        color: var(--accent);
+      }
+      .meta {
+        font-size: 11px;
+        color: var(--fg-dim);
+        margin-bottom: 10px;
+      }
+      .keys {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        padding: 10px 12px;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        font-size: 12px;
+        color: var(--accent);
+        word-break: break-word;
+      }
+      .keys strong {
+        color: var(--fg);
+      }
+      pre {
+        background: var(--bg);
+        border: 1px solid var(--line);
+        padding: 12px;
+        border-radius: 6px;
+        font-size: 11px;
+        line-height: 1.45;
+        max-height: 420px;
+        overflow: auto;
+        white-space: pre-wrap;
+        word-break: break-word;
+        color: var(--fg);
+      }
+      .err {
+        color: var(--critical);
+      }
+      .ok {
+        color: var(--accent);
+      }
+      a {
+        color: var(--accent);
+      }
+      .nav {
+        margin-bottom: 18px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <h1>galileo watch · página de debug</h1>
+    <p class="sub">
+      Mostra a estrutura real do JSON devolvido pelos três endpoints. Use isto
+      pra alinhar os nomes de campos do <code>processor.js</code>.
+      <span class="nav">— <a href="/">voltar ao dashboard</a></span>
+    </p>
+
+    <div class="section" id="sec-alarmes">
+      <h2>1 · alarmes</h2>
+      <div class="meta" id="meta-alarmes">carregando…</div>
+      <div class="keys" id="keys-alarmes"></div>
+      <pre id="dump-alarmes"></pre>
+    </div>
+
+    <div class="section" id="sec-unidades">
+      <h2>2 · unidades</h2>
+      <div class="meta" id="meta-unidades">carregando…</div>
+      <div class="keys" id="keys-unidades"></div>
+      <pre id="dump-unidades"></pre>
+    </div>
+
+    <div class="section" id="sec-telemetria">
+      <h2>3 · telemetria (dispositivoId=13285)</h2>
+      <div class="meta" id="meta-telemetria">carregando…</div>
+      <div class="keys" id="keys-telemetria"></div>
+      <pre id="dump-telemetria"></pre>
+    </div>
+
+    <script src="js/config.js"></script>
+    <script>
+      (function () {
+        const cfg = window.GALILEO_CONFIG;
+
+        async function inspect(label, url) {
+          const meta = document.getElementById(`meta-${label}`);
+          const keys = document.getElementById(`keys-${label}`);
+          const dump = document.getElementById(`dump-${label}`);
+          try {
+            const t0 = performance.now();
+            const res = await fetch(url, { headers: { Accept: "application/json" } });
+            const ms = (performance.now() - t0).toFixed(0);
+
+            if (!res.ok) {
+              meta.innerHTML = `<span class="err">HTTP ${res.status} ${res.statusText}</span> · ${ms}ms`;
+              dump.textContent = await res.text();
+              return;
+            }
+
+            const json = await res.json();
+            const isArray = Array.isArray(json);
+            const total = isArray ? json.length : "objeto único";
+            meta.innerHTML =
+              `<span class="ok">HTTP ${res.status}</span> · ${ms}ms · ` +
+              `tipo: ${isArray ? "array" : typeof json} · total: ${total}`;
+
+            // descobrir chaves do primeiro item
+            const sample = isArray ? json[0] : json;
+            if (sample && typeof sample === "object") {
+              const ks = Object.keys(sample);
+              keys.innerHTML =
+                `<strong>chaves do 1º item (${ks.length}):</strong> ` +
+                ks.map((k) => `<code>${k}</code>`).join(", ");
+            } else {
+              keys.textContent = "(sem chaves — não é objeto)";
+            }
+
+            // imprimir os 3 primeiros
+            const slice = isArray ? json.slice(0, 3) : json;
+            dump.textContent = JSON.stringify(slice, null, 2);
+          } catch (e) {
+            meta.innerHTML = `<span class="err">erro:</span> ${e.message}`;
+          }
+        }
+
+        inspect("alarmes", cfg.endpoints.alarmes);
+        inspect("unidades", cfg.endpoints.unidades);
+        inspect("telemetria", cfg.endpoints.telemetria(13285));
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Galileo Watch — PoC Monitoramento</title>
+    <meta name="description" content="Console de monitoramento Galileo: alarmes, unidades e telemetria com consulta inteligente." />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,300;12..96,500;12..96,700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <link rel="stylesheet" href="css/reset.css" />
+    <link rel="stylesheet" href="css/tokens.css" />
+    <link rel="stylesheet" href="css/layout.css" />
+    <link rel="stylesheet" href="css/components.css" />
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  </head>
+
+  <body>
+    <div class="grain" aria-hidden="true"></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="22" height="22">
+            <circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="1.2" />
+            <circle cx="16" cy="16" r="4" fill="currentColor" />
+            <path d="M16 2 L16 8 M16 24 L16 30 M2 16 L8 16 M24 16 L30 16" stroke="currentColor" stroke-width="1.2" />
+          </svg>
+        </div>
+        <div class="brand__text">
+          <span class="brand__name">GALILEO · WATCH</span>
+          <span class="brand__sub">control deck / poc v0.1</span>
+        </div>
+      </div>
+
+      <div class="topbar__status">
+        <div class="status-pill" id="status-pill">
+          <span class="dot dot--idle"></span>
+          <span id="status-text">Aguardando ingestão…</span>
+        </div>
+        <div class="clock">
+          <span class="clock__label">UTC-3</span>
+          <span class="clock__time" id="clock">--:--:--</span>
+        </div>
+        <button class="btn btn--ghost" id="refresh-btn" title="Re-coletar todos os endpoints">
+          <span class="btn__icon">↻</span> recoletar
+        </button>
+      </div>
+    </header>
+
+    <main class="grid">
+      <!-- KPIs -->
+      <section class="kpis" aria-label="indicadores principais">
+        <article class="kpi">
+          <span class="kpi__label">alarmes ativos</span>
+          <span class="kpi__value" id="kpi-alarmes">—</span>
+          <span class="kpi__delta" id="kpi-alarmes-delta">monitorando</span>
+        </article>
+        <article class="kpi kpi--critical">
+          <span class="kpi__label">criticidade alta</span>
+          <span class="kpi__value" id="kpi-criticos">—</span>
+          <span class="kpi__delta" id="kpi-criticos-delta">—</span>
+        </article>
+        <article class="kpi">
+          <span class="kpi__label">unidades cadastradas</span>
+          <span class="kpi__value" id="kpi-unidades">—</span>
+          <span class="kpi__delta" id="kpi-unidades-delta">—</span>
+        </article>
+        <article class="kpi">
+          <span class="kpi__label">sinal de vida &lt;24h</span>
+          <span class="kpi__value" id="kpi-sinalvida">—</span>
+          <span class="kpi__delta" id="kpi-sinalvida-delta">—</span>
+        </article>
+        <article class="kpi kpi--warning">
+          <span class="kpi__label">contratos a vencer 30d</span>
+          <span class="kpi__value" id="kpi-contratos">—</span>
+          <span class="kpi__delta" id="kpi-contratos-delta">—</span>
+        </article>
+      </section>
+
+      <!-- Gráficos -->
+      <section class="panel panel--span6" aria-label="distribuição por criticidade">
+        <header class="panel__head">
+          <h2 class="panel__title">distribuição por criticidade</h2>
+          <span class="panel__hint">alarmes ativos</span>
+        </header>
+        <div class="panel__body chart-wrap">
+          <canvas id="chart-criticidade"></canvas>
+        </div>
+      </section>
+
+      <section class="panel panel--span6" aria-label="lojas com mais alarmes">
+        <header class="panel__head">
+          <h2 class="panel__title">top lojas por volume de alarmes</h2>
+          <span class="panel__hint">top 10</span>
+        </header>
+        <div class="panel__body chart-wrap">
+          <canvas id="chart-lojas"></canvas>
+        </div>
+      </section>
+
+      <section class="panel panel--span12" aria-label="telemetria do dispositivo">
+        <header class="panel__head panel__head--row">
+          <div>
+            <h2 class="panel__title">telemetria · série temporal</h2>
+            <span class="panel__hint" id="telemetria-meta">dispositivoId 13285 · últimos 5 valores descartados</span>
+          </div>
+          <div class="panel__actions">
+            <label for="dispositivo-input" class="sr-only">id do dispositivo</label>
+            <input
+              id="dispositivo-input"
+              type="text"
+              inputmode="numeric"
+              placeholder="dispositivoId"
+              value="13285"
+              class="input input--mono"
+            />
+            <button class="btn" id="dispositivo-btn">carregar</button>
+          </div>
+        </header>
+        <div class="panel__body chart-wrap chart-wrap--tall">
+          <canvas id="chart-telemetria"></canvas>
+        </div>
+      </section>
+
+      <!-- Tabela de alarmes -->
+      <section class="panel panel--span8" aria-label="alarmes ativos">
+        <header class="panel__head panel__head--row">
+          <div>
+            <h2 class="panel__title">alarmes ativos · enriquecidos</h2>
+            <span class="panel__hint">cruzamento alarmes ⨯ unidades</span>
+          </div>
+          <div class="panel__actions">
+            <label for="filtro-critic" class="sr-only">filtro por criticidade</label>
+            <select id="filtro-critic" class="input">
+              <option value="">todas as criticidades</option>
+              <option value="Crítica">crítica</option>
+              <option value="Alta">alta</option>
+              <option value="Média">média</option>
+              <option value="Baixa">baixa</option>
+              <option value="Informativa">informativa</option>
+            </select>
+            <label for="busca-alarme" class="sr-only">busca</label>
+            <input id="busca-alarme" type="search" placeholder="buscar loja / dispositivo…" class="input" />
+          </div>
+        </header>
+        <div class="panel__body panel__body--scroll">
+          <table class="datatable" id="tabela-alarmes">
+            <thead>
+              <tr>
+                <th>loja</th>
+                <th>dispositivo</th>
+                <th>descrição</th>
+                <th>crit.</th>
+                <th>aberto há</th>
+                <th>contrato</th>
+                <th>sinal de vida</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr class="datatable__empty"><td colspan="7">carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Consulta inteligente -->
+      <aside class="panel panel--span4 panel--accent" aria-label="consulta inteligente">
+        <header class="panel__head">
+          <h2 class="panel__title">consulta inteligente · RAG</h2>
+          <span class="panel__hint">chunks + TF-IDF + síntese</span>
+        </header>
+        <div class="panel__body rag">
+          <form class="rag__form" id="rag-form">
+            <label for="rag-input" class="sr-only">pergunta</label>
+            <textarea
+              id="rag-input"
+              rows="3"
+              placeholder="ex: quais lojas têm mais alarmes críticos ativos?"
+            ></textarea>
+            <button type="submit" class="btn btn--primary">perguntar</button>
+          </form>
+
+          <div class="rag__suggestions">
+            <button class="chip" data-q="Quais lojas têm mais alarmes críticos ativos?">lojas com mais críticos</button>
+            <button class="chip" data-q="Existem contratos próximos do vencimento com muitos alarmes?">contratos a vencer com alarmes</button>
+            <button class="chip" data-q="Qual a temperatura média do dispositivo 13285 nas últimas leituras?">temperatura média 13285</button>
+            <button class="chip" data-q="Quais dispositivos estão sem sinal de vida há mais de 24 horas?">sem sinal de vida</button>
+          </div>
+
+          <div class="rag__answer" id="rag-answer" aria-live="polite">
+            <p class="rag__placeholder">A resposta aparecerá aqui, com os chunks-fonte utilizados.</p>
+          </div>
+        </div>
+      </aside>
+    </main>
+
+    <footer class="footer">
+      <span>PoC · pipeline: ingestão → normalização → enriquecimento → persistência (memória) → RAG</span>
+      <span class="footer__sig">galileo-watch · build local</span>
+    </footer>
+
+    <script src="js/config.js" defer></script>
+    <script src="js/api.js" defer></script>
+    <script src="js/processor.js" defer></script>
+    <script src="js/analytics.js" defer></script>
+    <script src="js/charts.js" defer></script>
+    <script src="js/rag.js" defer></script>
+    <script src="js/ui.js" defer></script>
+    <script src="js/main.js" defer></script>
+  </body>
+</html>

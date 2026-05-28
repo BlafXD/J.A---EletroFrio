@@ -1,0 +1,45 @@
+# netlify.toml — configuração da PoC Galileo Watch
+#
+# Estrutura:
+#   - Site estático servido de "." (HTML/CSS/JS na raiz)
+#   - Netlify Functions em ./netlify/functions
+#   - Redirect /api/galileo  →  função "proxy"
+#
+# Em desenvolvimento local rode:  npx netlify dev
+# (Sem netlify dev, o redirect /api/* não existe e o front quebra por CORS.)
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Encaminha qualquer chamada do front em /api/galileo* para a function "proxy".
+# Mantemos o prefixo /api/galileo no front (config.js) para deixar claro
+# qual sistema upstream estamos cobrindo — facilita adicionar outros depois.
+[[redirects]]
+  from = "/api/galileo"
+  to = "/.netlify/functions/proxy"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/api/galileo/*"
+  to = "/.netlify/functions/proxy/:splat"
+  status = 200
+  force = true
+
+# Encaminha /api/llm pra função "llm" que chama o Gemini 2.5 Flash.
+# A chave fica em process.env.GEMINI_API_KEY (env var do Netlify).
+[[redirects]]
+  from = "/api/llm"
+  to = "/.netlify/functions/llm"
+  status = 200
+  force = true
+
+# fallback SPA — não usamos roteamento client-side, mas deixa pronto.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
