@@ -38,6 +38,14 @@
   status = 200
   force = true
 
+# Webhook do WhatsApp (Twilio). É a URL que você configura no painel
+# do Twilio Sandbox. Recebe a mensagem e responde via TwiML.
+[[redirects]]
+  from = "/api/whatsapp"
+  to = "/.netlify/functions/whatsapp-webhook"
+  status = 200
+  force = true
+
 # fallback SPA — não usamos roteamento client-side, mas deixa pronto.
 [[redirects]]
   from = "/*"
