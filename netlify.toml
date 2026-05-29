@@ -46,6 +46,14 @@
   status = 200
   force = true
 
+# Endpoint de teste: dispara uma notificação WhatsApp sob demanda.
+# Acesse /api/test-whatsapp no navegador para validar a integração.
+[[redirects]]
+  from = "/api/test-whatsapp"
+  to = "/.netlify/functions/test-whatsapp"
+  status = 200
+  force = true
+
 # fallback SPA — não usamos roteamento client-side, mas deixa pronto.
 [[redirects]]
   from = "/*"
