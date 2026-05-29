@@ -20,11 +20,14 @@
 const GALILEO_BASE =
   "https://credenciamento.eletrofrio.com.br:5900/galileo/api/api_hackathon";
 
-exports.handler = async () => {
+exports.handler = async (event) => {
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_WHATSAPP_FROM;
   const to = process.env.ALERT_WHATSAPP_TO;
+
+  // ?modo=real → envia a mensagem idêntica à de produção (sem rótulo [TESTE])
+  const modoReal = (event.queryStringParameters || {}).modo === "real";
 
   const faltando = [];
   if (!sid) faltando.push("TWILIO_ACCOUNT_SID");
@@ -61,14 +64,20 @@ exports.handler = async () => {
     }
 
     const alarme = criticos[0];
-    const body = buildAlertMessage(alarme);
-    const enviado = await sendWhatsApp({ sid, token, from, to, body });
+    const body = buildAlertMessage(alarme, modoReal);
+    const resultado = await sendWhatsApp({ sid, token, from, to, body });
 
-    return json(enviado ? 200 : 502, {
-      ok: enviado,
-      mensagem: enviado
-        ? "Notificação de teste enviada! Verifique seu WhatsApp."
-        : "Falha ao enviar — confira o número, o join no sandbox e as credenciais.",
+    return json(resultado.ok ? 200 : 502, {
+      ok: resultado.ok,
+      mensagem: resultado.ok
+        ? "Twilio ACEITOU a mensagem. Se não chegou no WhatsApp, veja 'twilio_status' abaixo " +
+          "(provável janela de 24h do sandbox — mande qualquer mensagem ao número do sandbox e teste de novo)."
+        : "Falha ao enviar — veja os detalhes em 'twilio' abaixo.",
+      twilio_status: resultado.status || null,
+      twilio_sid: resultado.sid || null,
+      twilio_erro: resultado.twilio?.code
+        ? `${resultado.twilio.code}: ${resultado.twilio.message || ""}`
+        : null,
       preview: body,
       destino: to,
     });
@@ -143,7 +152,7 @@ function processData(alarmesRaw, unidadesRaw) {
   });
   return { alarmes, unidades };
 }
-function buildAlertMessage(a) {
+function buildAlertMessage(a, modoReal = false) {
   const loja = a.lojaApelido || a.lojaNm || `loja#${a.lojaId}`;
   const grupo = [a.grupoNm, a.subgrupoNm].filter(Boolean).join(" / ") || "—";
   let contratoLinha = "";
@@ -157,8 +166,15 @@ function buildAlertMessage(a) {
   const sinalLinha = a.loja_dhSinalVida
     ? `\n📡 Último sinal de vida: ${a.loja_dhSinalVida.toLocaleString("pt-BR")}`
     : "";
+
+  // modoReal=true reproduz exatamente a mensagem de produção (sem [TESTE])
+  const prefixo = modoReal ? "" : "[TESTE] ";
+  const rodape = modoReal
+    ? "Galileo Watch · monitoramento automático"
+    : "Galileo Watch · mensagem de teste";
+
   return (
-    `🚨 *[TESTE] ALARME ${a.criticidade ? a.criticidade.toUpperCase() : ""}* — ${loja}\n\n` +
+    `🚨 *${prefixo}ALARME ${a.criticidade ? a.criticidade.toUpperCase() : ""}* — ${loja}\n\n` +
     `📍 Dispositivo: ${a.dispositivoNm || "—"}\n` +
     `🔧 Tipo: ${a.alarmeDesc || "—"}\n` +
     `📂 Grupo: ${grupo}\n` +
@@ -166,7 +182,7 @@ function buildAlertMessage(a) {
     contratoLinha +
     sinalLinha +
     `\n\n⚠️ Risco de perda de produto perecível. Verificação recomendada.\n` +
-    `_Galileo Watch · mensagem de teste_`
+    `_${rodape}_`
   );
 }
 async function sendWhatsApp({ sid, token, from, to, body }) {
@@ -182,13 +198,15 @@ async function sendWhatsApp({ sid, token, from, to, body }) {
       },
       body: form.toString(),
     });
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      console.error("[test-whatsapp] twilio erro", res.status, await res.text().catch(() => ""));
-      return false;
+      console.error("[test-whatsapp] twilio erro", res.status, data);
+      return { ok: false, status: res.status, twilio: data };
     }
-    return true;
+    // data.status costuma ser "queued" ou "accepted" — entrega acontece depois
+    return { ok: true, status: data.status, sid: data.sid, twilio: data };
   } catch (e) {
     console.error("[test-whatsapp] falha:", e.message);
-    return false;
+    return { ok: false, twilio: { message: e.message } };
   }
 }
