@@ -202,9 +202,9 @@ export async function callGemini(prompt, maxTokens = 800) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), 10000);
   try {
-    const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    const res = await fetch(GEMINI_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
         generationConfig: {

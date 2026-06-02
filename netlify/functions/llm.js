@@ -54,9 +54,9 @@ exports.handler = async (event) => {
   const prompt = buildPrompt(question, chunks);
 
   try {
-    const upstream = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
+    const upstream = await fetch(GEMINI_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         contents: [
           {
