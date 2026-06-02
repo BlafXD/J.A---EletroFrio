@@ -202,14 +202,24 @@ O pipeline informacional segue: **ingestão → tratamento → enriquecimento
   pré-programadas — o sistema nunca fica sem resposta
 - Badge indica a origem da resposta; cada resposta exibe os chunks-fonte
 
-### Notificação proativa (WhatsApp)
+### Notificação proativa com diagnóstico por IA (WhatsApp)
 - Monitor agendado (`alarmes-monitor.mjs`) executa a cada 5 minutos
 - Detecta alarmes de criticidade Alta/Crítica ainda não notificados
-- Envia ao responsável uma mensagem WhatsApp com: loja, dispositivo, tipo,
-  grupo, tempo aberto, **contexto contratual (vencimento)** e último sinal
-  de vida
-- Dedupe persistente via Netlify Blobs (não reenvia o mesmo alarme)
-- Bootstrap na primeira execução evita disparo em massa ao ligar
+- Para cada alarme, usa o `dispositivoId` para **buscar a telemetria do
+  equipamento**, analisa as séries (temperatura × setpoint, tendência,
+  oscilação) e pede ao **Gemini um diagnóstico técnico** do problema
+- Envia ao responsável: cabeçalho do alarme + contexto contratual +
+  **diagnóstico da IA** + convite para conversar
+- Dedupe persistente via Netlify Blobs; bootstrap evita disparo em massa
+
+### Chatbot contextual (WhatsApp)
+- Quando o responsável **responde** a uma notificação, o webhook
+  (`whatsapp-webhook.mjs`) recupera o **contexto do alarme** (Blobs),
+  rebusca a **telemetria atual** do dispositivo e pede ao Gemini uma
+  resposta fundamentada — permitindo perguntas como "melhorou?",
+  "o que faço agora?", "qual a temperatura atual?"
+- Degrada com elegância: se o Gemini estiver indisponível, responde com
+  o diagnóstico/dados já conhecidos
 
 ---
 
@@ -234,11 +244,15 @@ galileo-watch/
 │   ├── ui.js                   renderização do DOM
 │   └── main.js                 orquestrador
 ├── netlify/
+│   ├── lib/
+│   │   └── galileo.mjs         módulo compartilhado: coleta, processamento,
+│   │                           análise de telemetria, Gemini e Twilio
 │   └── functions/
 │       ├── proxy.js            proxy CORS para os endpoints Galileo
-│       ├── llm.js              geração RAG com Gemini 2.5 Flash
-│       ├── whatsapp-webhook.js webhook de consulta por WhatsApp (opcional)
-│       └── alarmes-monitor.mjs monitor agendado → notificação WhatsApp
+│       ├── llm.js              geração RAG do dashboard (Gemini 2.5 Flash)
+│       ├── alarmes-monitor.mjs monitor agendado → diagnóstico IA + WhatsApp
+│       ├── whatsapp-webhook.mjs chatbot contextual (responde o dono da loja)
+│       └── test-whatsapp.mjs   disparo de teste/demonstração sob demanda
 ├── package.json                dependência @netlify/blobs
 ├── netlify.toml                build, functions, redirects
 ├── .gitignore                  ignora node_modules, .netlify, .env
