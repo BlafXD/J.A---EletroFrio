@@ -8,7 +8,7 @@ if (!key) {
   console.log("Uso: node testar-gemini.mjs SUA_CHAVE_AQUI");
   process.exit(1);
 }
-const URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+const URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent";
 const body = JSON.stringify({
   contents: [{ parts: [{ text: "Responda apenas: funcionou" }] }],
   generationConfig: { maxOutputTokens: 50, thinkingConfig: { thinkingBudget: 0 } },
