@@ -193,31 +193,58 @@ export function resumirTelemetria(a) {
 }
 
 /* ===================== Gemini ===================== */
-export async function callGemini(prompt, maxTokens = 500) {
+export async function callGemini(prompt, maxTokens = 800) {
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return null;
+  if (!apiKey) {
+    console.error("[gemini] GEMINI_API_KEY ausente no ambiente da function");
+    return null;
+  }
   const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 9000);
+  const t = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch(`${GEMINI_URL}?key=${apiKey}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.25, maxOutputTokens: maxTokens, topP: 0.95 },
+        generationConfig: {
+          temperature: 0.25,
+          maxOutputTokens: maxTokens,
+          topP: 0.95,
+          // Gemini 2.5 Flash "pensa" antes de responder e isso consome o
+          // orçamento de tokens. Zeramos o thinking para a resposta sair
+          // direto (mais rápido e sem estourar tokens só no raciocínio).
+          thinkingConfig: { thinkingBudget: 0 },
+        },
+        safetySettings: [
+          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
+          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
+          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
+          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
+        ],
       }),
       signal: controller.signal,
     });
     if (!res.ok) {
-      console.error("[gemini] erro", res.status, await res.text().catch(() => ""));
+      console.error("[gemini] erro HTTP", res.status, await res.text().catch(() => ""));
       return null;
     }
     const data = await res.json();
-    const parts = data.candidates?.[0]?.content?.parts || [];
+    const cand = data.candidates?.[0];
+    const parts = cand?.content?.parts || [];
     const txt = parts.map((p) => p.text || "").join("").trim();
+    if (!txt) {
+      // Não houve texto: registra o motivo para diagnóstico nos logs do Netlify
+      console.error(
+        "[gemini] resposta sem texto. finishReason:",
+        cand?.finishReason,
+        "| blockReason:",
+        data.promptFeedback?.blockReason
+      );
+    }
     return txt || null;
   } catch (e) {
-    console.error("[gemini] falha:", e.message);
+    console.error("[gemini] falha/timeout:", e.message);
     return null;
   } finally {
     clearTimeout(t);
@@ -245,7 +272,7 @@ Responda em português do Brasil, no máximo 5 frases curtas, cobrindo:
 2) causa(s) provável(is);
 3) ação recomendada.
 Use os números da telemetria. NÃO invente dados que não estão acima. Tom técnico mas claro. Sem saudações.`;
-  const r = await callGemini(prompt, 500);
+  const r = await callGemini(prompt, 700);
   return r;
 }
 
@@ -264,7 +291,7 @@ ${resumoTelemetriaAtual || contexto.resumoTelemetria || "indisponível"}
 O responsável perguntou: "${pergunta}"
 
 Responda em português do Brasil, de forma clara e útil, no máximo 4 frases curtas. Baseie-se no contexto e na telemetria. Se a pergunta fugir do tema, responda com o que for possível a partir dos dados. Não invente. Sem saudações longas.`;
-  const r = await callGemini(prompt, 400);
+  const r = await callGemini(prompt, 600);
   return r;
 }
 
