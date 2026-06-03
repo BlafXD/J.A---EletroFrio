@@ -1,206 +1,178 @@
-/* ui.js
- * --------------------------------------------------------------
- * Funções de renderização do DOM.
- * Mantém o `main.js` enxuto e separa apresentação de orquestração.
- * --------------------------------------------------------------
- */
+/* ============================================================
+   ui.js — renderização do dashboard "Freezer Controle"
+   ============================================================ */
 window.GalileoUI = (function (analytics) {
-  /* ---------- status ---------- */
-  function setStatus(state, text) {
-    const pill = document.getElementById("status-pill");
-    const dot = pill?.querySelector(".dot");
-    const t = document.getElementById("status-text");
-    if (!pill || !dot || !t) return;
+  /* ---------- ícones SVG reutilizáveis ---------- */
+  const ICON = {
+    building: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/></svg>',
+    snowflake: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12h20"/><path d="M12 2v20"/><path d="m20 16-4-4 4-4"/><path d="m4 8 4 4-4 4"/><path d="m16 4-4 4-4-4"/><path d="m8 20 4-4 4 4"/></svg>',
+    shieldCheck: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>',
+    alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>',
+  };
 
-    dot.className = "dot";
-    const stateClass = {
-      idle: "dot--idle",
-      load: "dot--load",
-      ok: "dot--ok",
-      err: "dot--err",
-    }[state] || "dot--idle";
-    dot.classList.add(stateClass);
-    t.textContent = text;
+  /* ---------- parâmetros de temperatura (referência fixa) ---------- */
+  const PARAMETROS = [
+    { tipo: "Freezer / Congelados", min: -22, max: -18, desc: "Sorvetes, congelados, carnes" },
+    { tipo: "Câmara fria de congelados", min: -25, max: -20, desc: "Estocagem profunda" },
+    { tipo: "Geladeira / Refrigerados", min: 2, max: 8, desc: "Laticínios, frios, FLV" },
+    { tipo: "Câmara fria de resfriados", min: 0, max: 4, desc: "Carnes resfriadas" },
+    { tipo: "Açougue / Balcão de carnes", min: 0, max: 4, desc: "Exposição de carnes" },
+    { tipo: "Padaria / Confeitaria fria", min: 4, max: 10, desc: "Tortas, doces refrigerados" },
+    { tipo: "Ilha de bebidas", min: 4, max: 7, desc: "Bebidas geladas" },
+    { tipo: "Ambiente climatizado", min: 18, max: 24, desc: "Sala de vendas" },
+  ];
+
+  function escapeHTML(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
-  /* ---------- relógio ---------- */
-  function startClock() {
-    const el = document.getElementById("clock");
-    if (!el) return;
-    const tick = () => {
-      const d = new Date();
-      el.textContent = d.toLocaleTimeString("pt-BR", { hour12: false });
-    };
-    tick();
-    setInterval(tick, 1000);
+  /* ---------- status pill ---------- */
+  function setStatus(state, text) {
+    const el = document.getElementById("status");
+    const txt = document.getElementById("status-text");
+    if (el) el.dataset.state = state;
+    if (txt && text != null) txt.textContent = text;
+  }
+
+  /* ---------- parâmetros ---------- */
+  function renderParametros() {
+    const grid = document.getElementById("param-grid");
+    if (!grid) return;
+    grid.innerHTML = PARAMETROS.map((p) => {
+      const frio = p.max <= 0;
+      const icon = frio ? `<span class="param__icon">${ICON.snowflake}</span>` : "";
+      return `
+        <div class="param ${frio ? "param--frio" : ""}">
+          <div class="param__top">${icon}<span class="param__name">${escapeHTML(p.tipo)}</span></div>
+          <div class="param__range">${p.min}° a ${p.max}°C</div>
+          <div class="param__desc">${escapeHTML(p.desc)}</div>
+        </div>`;
+    }).join("");
   }
 
   /* ---------- KPIs ---------- */
-  function renderKPIs(data) {
-    const set = (id, val, delta) => {
-      const v = document.getElementById(id);
-      const d = document.getElementById(`${id}-delta`);
-      if (v) v.textContent = val;
-      if (d && delta !== undefined) d.textContent = delta;
-    };
+  function renderKPIs(totais) {
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    set("kpi-empresas", totais.empresas);
+    set("kpi-lojas", totais.lojas);
+    set("kpi-alarmes", totais.alarmes);
+    set("kpi-criticos", totais.criticos);
 
-    const ativos = analytics.kpiTotalAtivos(data.alarmes);
-    const criticos = analytics.kpiCriticos(data.alarmes);
-    const unidades = analytics.kpiUnidades(data.unidades);
-    const sinal24h = analytics.kpiSinalVida24h(data.unidades);
-    const contratos = analytics.kpiContratosVencendo(data.unidades, 30);
-
-    set("kpi-alarmes", ativos, `${data.meta.nAlarmesBrutos} brutos → ${ativos} tratados`);
-    set("kpi-criticos", criticos, criticos === 0 ? "estável" : "atenção");
-    set("kpi-unidades", unidades, `${data.meta.nUnidadesBrutas} brutas → ${unidades}`);
-    set("kpi-sinalvida", sinal24h, `de ${unidades} unidades`);
-    set("kpi-contratos", contratos, "próximos 30 dias");
+    const action = document.getElementById("kpi-criticos-action");
+    if (action) {
+      action.innerHTML = totais.criticos > 0
+        ? '<button class="btn btn--danger btn--sm" id="ver-criticos">Ver todos</button>'
+        : "";
+    }
   }
 
-  /* ---------- Tabela de alarmes ---------- */
-  function renderTabela(alarmes, filtros = {}) {
-    const tbody = document.querySelector("#tabela-alarmes tbody");
-    if (!tbody) return;
+  /* ---------- cards de empresa ---------- */
+  function badgeEmpresa(e) {
+    if (e.criticos > 0) {
+      return `<span class="badge badge--danger">${ICON.alert}${e.criticos} crítico${e.criticos > 1 ? "s" : ""}</span>`;
+    }
+    if (e.alarmes === 0) {
+      return `<span class="badge badge--ok">${ICON.shieldCheck}OK</span>`;
+    }
+    return `<span class="badge badge--warn">${e.alarmes} alarme${e.alarmes > 1 ? "s" : ""}</span>`;
+  }
 
-    const filtrados = alarmes.filter((a) => {
-      if (!a.ativo) return false;
-      if (filtros.criticidade && a.criticidade !== filtros.criticidade) return false;
-      if (filtros.q) {
-        const q = filtros.q.toLowerCase();
-        const hay = `${a.lojaNm || ""} ${a.lojaApelido || ""} ${a.dispositivoNm || ""} ${a.alarmeDesc || ""}`.toLowerCase();
-        if (!hay.includes(q)) return false;
-      }
-      return true;
-    });
+  function renderEmpresas(empresas, opts = {}) {
+    const grid = document.getElementById("empresa-grid");
+    if (!grid) return;
 
-    if (!filtrados.length) {
-      tbody.innerHTML = `<tr class="datatable__empty"><td colspan="7">nenhum alarme ativo com os filtros atuais</td></tr>`;
+    if (!empresas.length) {
+      grid.innerHTML = '<div class="empty">Nenhuma empresa encontrada.</div>';
       return;
     }
 
-    const linhas = filtrados.map((a) => {
-      const loja = a.lojaApelido || a.lojaNm || "—";
-      const lojaSub = a.contaNm || "";
-      const disp = a.dispositivoNm || "—";
-      const grupo = [a.grupoNm, a.subgrupoNm].filter(Boolean).join(" / ") || "—";
-      const desc = a.alarmeDesc || "—";
-      const evento = a.eventoDesc || "sem evento";
+    grid.innerHTML = empresas.map((e) => `
+      <a class="card empresa" href="empresa.html?contaId=${encodeURIComponent(e.contaId)}" data-conta="${escapeHTML(e.contaId)}">
+        <div class="empresa__head">
+          <span class="empresa__icon">${ICON.building}</span>
+          <div class="empresa__id">
+            <div class="empresa__name" title="${escapeHTML(e.contaNm)}">${escapeHTML(e.contaNm)}</div>
+            <div class="empresa__sub">ID conta ${escapeHTML(e.contaId)}</div>
+          </div>
+          ${badgeEmpresa(e)}
+        </div>
+        <div class="empresa__stats">
+          <div class="mini"><div class="mini__value">${e.lojas.length}</div><div class="mini__label">Lojas</div></div>
+          <div class="mini"><div class="mini__value">${e.alarmes}</div><div class="mini__label">Alarmes</div></div>
+          <div class="mini"><div class="mini__value ${e.criticos ? "is-danger" : ""}">${e.criticos}</div><div class="mini__label">Críticos</div></div>
+        </div>
+      </a>`).join("");
 
-      const critClass = {
-        "Crítica": "tag--critica",
-        Alta: "tag--alta",
-        "Média": "tag--media",
-        Baixa: "tag--baixa",
-        Informativa: "tag--info",
-      }[a.criticidade] || "tag--neutral";
-
-      const tempoAberto = analytics.formatTempoAberto(a.alarmeDhCad);
-      const contrato = a.loja_contrato || a.tpContratoNm || "—";
-      const venc = a.loja_dtValContrato
-        ? a.loja_dtValContrato.toLocaleDateString("pt-BR")
-        : "—";
-      const sinal = a.loja_dhSinalVida
-        ? a.loja_dhSinalVida.toLocaleString("pt-BR")
-        : "—";
-
-      return `
-        <tr>
-          <td>
-            <div>${escapeHTML(loja)}</div>
-            <div class="cell-mono">${escapeHTML(lojaSub)}</div>
-          </td>
-          <td>
-            <div>${escapeHTML(disp)}</div>
-            <div class="cell-mono">${escapeHTML(grupo)}</div>
-          </td>
-          <td class="cell-desc">
-            ${escapeHTML(desc)}
-            <small>${escapeHTML(evento)}</small>
-          </td>
-          <td><span class="tag ${critClass}">${escapeHTML(a.criticidade || "—")}</span></td>
-          <td class="cell-mono">${escapeHTML(tempoAberto)}</td>
-          <td>
-            <div>${escapeHTML(contrato)}</div>
-            <div class="cell-mono">vence ${escapeHTML(venc)}</div>
-          </td>
-          <td class="cell-mono">${escapeHTML(sinal)}</td>
-        </tr>
-      `;
-    });
-
-    tbody.innerHTML = linhas.join("");
-  }
-
-  function escapeHTML(s) {
-    return String(s ?? "")
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  /* ---------- RAG ---------- */
-  function renderAnswer({ answer, sources, source, model }) {
-    const box = document.getElementById("rag-answer");
-    if (!box) return;
-    const paragraphs = answer.split("\n").map((p) => p.trim()).filter(Boolean);
-
-    // Badge indicando origem da resposta
-    let badgeHtml = "";
-    if (source === "llm") {
-      badgeHtml = `<div class="rag__badge rag__badge--llm">via ${escapeHTML(model || "Gemini")}</div>`;
-    } else if (source === "rules") {
-      badgeHtml = `<div class="rag__badge rag__badge--rules">via regras (fallback)</div>`;
-    } else if (source === "error") {
-      badgeHtml = `<div class="rag__badge rag__badge--err">erro</div>`;
+    if (typeof opts.onSelect === "function") {
+      grid.querySelectorAll(".empresa").forEach((card) => {
+        card.addEventListener("click", (ev) => {
+          ev.preventDefault();
+          opts.onSelect(card.dataset.conta);
+        });
+      });
     }
+  }
 
-    const ans = paragraphs.map((p) => `<p>${escapeHTML(p)}</p>`).join("");
-    let srcHtml = "";
-    if (sources && sources.length) {
-      const items = sources
-        .slice(0, 4)
-        .map(
-          (s) => `
-          <div class="rag__source">
-            <div class="rag__source-meta">
-              <span class="rag__num">${s.type}</span> · score ${s.score} · id ${escapeHTML(s.id)}
-            </div>
-            ${escapeHTML(s.text)}
-          </div>`
-        )
-        .join("");
-      srcHtml = `
-        <div class="rag__sources">
-          <div class="rag__sources-title">chunks fonte (top ${Math.min(sources.length, 4)})</div>
-          ${items}
-        </div>`;
+  /* ---------- chat (assistente / RAG) ---------- */
+  function chatScroll() {
+    const log = document.getElementById("chat-log");
+    if (log) log.scrollTop = log.scrollHeight;
+  }
+
+  function chatUser(text) {
+    const log = document.getElementById("chat-log");
+    if (!log) return;
+    const div = document.createElement("div");
+    div.className = "msg msg--user";
+    div.textContent = text;
+    log.appendChild(div);
+    chatScroll();
+  }
+
+  function chatTyping() {
+    const log = document.getElementById("chat-log");
+    if (!log) return null;
+    const div = document.createElement("div");
+    div.className = "msg msg--bot";
+    div.innerHTML = '<span class="typing"><span></span><span></span><span></span></span>';
+    log.appendChild(div);
+    chatScroll();
+    return div;
+  }
+
+  function chatBot({ answer, source, sources }, node) {
+    const log = document.getElementById("chat-log");
+    if (!log) return;
+    const div = node || document.createElement("div");
+    div.className = "msg msg--bot";
+
+    let meta = "";
+    if (source) {
+      const isGemini = /gemini|llm/i.test(source);
+      const cls = isGemini ? "origin--gemini" : "origin--regras";
+      const label = isGemini ? "via Gemini" : "via regras";
+      meta = `<div class="msg__meta"><span class="origin ${cls}">${label}</span>`;
+      if (sources && sources.length) {
+        meta += `<span>· ${sources.length} fonte${sources.length > 1 ? "s" : ""}</span>`;
+      }
+      meta += "</div>";
     }
-    box.innerHTML = badgeHtml + ans + srcHtml;
-  }
-
-  function renderAnswerLoading() {
-    const box = document.getElementById("rag-answer");
-    if (!box) return;
-    box.innerHTML = `
-      <div class="rag__loading">
-        <span class="rag__loading-dots"><span></span><span></span><span></span></span>
-        <span class="rag__loading-text">recuperando chunks · consultando Gemini · sintetizando</span>
-      </div>`;
-  }
-
-  function setTelemetriaMeta(text) {
-    const el = document.getElementById("telemetria-meta");
-    if (el) el.textContent = text;
+    div.innerHTML = `<div>${escapeHTML(answer).replace(/\n/g, "<br>")}</div>${meta}`;
+    if (!node) log.appendChild(div);
+    chatScroll();
   }
 
   return {
     setStatus,
-    startClock,
+    renderParametros,
     renderKPIs,
-    renderTabela,
-    renderAnswer,
-    renderAnswerLoading,
-    setTelemetriaMeta,
+    renderEmpresas,
+    chatUser,
+    chatBot,
+    chatTyping,
+    escapeHTML,
+    PARAMETROS,
   };
 })(window.GalileoAnalytics);

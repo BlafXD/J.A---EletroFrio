@@ -20,7 +20,7 @@
 import { getStore } from "@netlify/blobs";
 import {
   fetchAlarmes, fetchUnidades, fetchTelemetria, processData,
-  analisarTelemetria, resumirTelemetria, gerarDiagnostico,
+  analisarTelemetria, resumirTelemetria, gerarDiagnostico, diagnosticoFactual,
   buildAlertHeader, sendWhatsApp, normNumero,
 } from "../lib/galileo.mjs";
 
@@ -72,28 +72,34 @@ export default async () => {
     if (await store.get(key).catch(() => null)) continue;
     novos++;
 
-    // 1-2. telemetria do dispositivo + análise
+    // 1-2. telemetria do dispositivo + análise factual
+    let analise = null;
     let resumoTel = "Telemetria indisponível.";
     if (a.dispositivoId) {
       try {
         const tel = await fetchTelemetria(a.dispositivoId);
-        resumoTel = resumirTelemetria(analisarTelemetria(tel));
+        analise = analisarTelemetria(tel);
+        resumoTel = resumirTelemetria(analise);
       } catch (e) {
         console.error("[monitor] telemetria falhou p/ disp", a.dispositivoId, e.message);
       }
     }
 
-    // 3. diagnóstico por IA (com fallback se Gemini indisponível)
-    const diagnostico =
-      (await gerarDiagnostico(a, resumoTel)) ||
-      "Verifique o equipamento: a leitura indica condição fora do esperado para a operação normal.";
+    // 3. diagnóstico: tenta IA; se a quota do Gemini estiver esgotada (429),
+    //    cai no diagnóstico FACTUAL por regras — que usa os números reais da
+    //    telemetria e não inventa nada. O alerta sai útil com ou sem IA.
+    const diagnosticoIA = await gerarDiagnostico(a, resumoTel);
+    const diagnostico = diagnosticoIA || diagnosticoFactual(a, analise);
 
-    // 4. mensagem = cabeçalho + diagnóstico
+    // 4. mensagem = cabeçalho + diagnóstico + link para o painel da loja
+    const siteUrl = (process.env.URL || "https://radiant-sunburst-1294db.netlify.app").replace(/\/$/, "");
+    const linkLoja = a.lojaId ? `${siteUrl}/loja.html?lojaId=${encodeURIComponent(a.lojaId)}` : siteUrl;
     const body =
       buildAlertHeader(a) +
       `\n\n🤖 *Diagnóstico:*\n${diagnostico}\n\n` +
+      `📊 Saiba mais (gráficos e telemetria da loja):\n${linkLoja}\n\n` +
       `_Responda esta mensagem para falar com o assistente._\n` +
-      `_Galileo Watch · monitoramento automático_`;
+      `_Freezer Controle · monitoramento automático_`;
 
     const r = await sendWhatsApp({ sid, token, from, to, body });
     if (r.ok) {

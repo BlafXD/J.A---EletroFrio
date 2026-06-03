@@ -153,9 +153,60 @@ window.GalileoAnalytics = (function () {
     return `${d}d ${h % 24}h`;
   }
 
+  /* ---------- agrupamento por empresa (visão do dashboard) ---------- */
+  function isCritico(a) {
+    return a.criticidade === "Alta" || a.criticidade === "Crítica";
+  }
+
+  // Agrupa por contaId, semeando com as unidades (assim toda empresa com loja
+  // aparece, mesmo sem alarme) e somando alarmes/críticos por cima.
+  function porEmpresa(alarmes, unidades) {
+    const byConta = new Map();
+    for (const u of unidades) {
+      const id = u.contaId;
+      if (id == null || id === "") continue;
+      if (!byConta.has(id)) {
+        byConta.set(id, { contaId: id, contaNm: u.contaNm || `Conta ${id}`, lojas: [], alarmes: 0, criticos: 0 });
+      }
+      byConta.get(id).lojas.push(u);
+    }
+    for (const a of alarmes) {
+      if (!isAtivo(a)) continue;
+      const id = a.contaId;
+      if (id == null || id === "") continue;
+      if (!byConta.has(id)) {
+        byConta.set(id, { contaId: id, contaNm: a.contaNm || `Conta ${id}`, lojas: [], alarmes: 0, criticos: 0 });
+      }
+      const e = byConta.get(id);
+      e.alarmes++;
+      if (isCritico(a)) e.criticos++;
+    }
+    return [...byConta.values()].sort((a, b) => String(a.contaNm).localeCompare(String(b.contaNm)));
+  }
+
+  function totaisGerais(empresas) {
+    return {
+      empresas: empresas.length,
+      lojas: empresas.reduce((s, e) => s + e.lojas.length, 0),
+      alarmes: empresas.reduce((s, e) => s + e.alarmes, 0),
+      criticos: empresas.reduce((s, e) => s + e.criticos, 0),
+    };
+  }
+
+  function topEmpresasAlarmes(empresas, n = 8) {
+    return [...empresas]
+      .filter((e) => e.alarmes > 0)
+      .sort((a, b) => b.alarmes - a.alarmes)
+      .slice(0, n);
+  }
+
   return {
     kpiTotalAtivos,
     kpiCriticos,
+    porEmpresa,
+    totaisGerais,
+    topEmpresasAlarmes,
+    isCritico,
     kpiUnidades,
     kpiSinalVida24h,
     kpiContratosVencendo,

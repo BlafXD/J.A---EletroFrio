@@ -193,6 +193,67 @@ export function resumirTelemetria(a) {
 }
 
 /* ===================== Gemini ===================== */
+/* Diagnóstico FACTUAL por regras — sem IA, 100% baseado na telemetria real.
+ * Serve de fallback quando o Gemini está fora (quota esgotada) e também
+ * alimenta a página da loja. Como usa só números medidos, não há como
+ * "alucinar": ou descreve o que a telemetria mostra, ou diz que não há leitura. */
+export function diagnosticoFactual(alarme, analise) {
+  const partes = [];
+  const a = analise;
+
+  if (a && a.temp && a.temp.atual !== null) {
+    let s = `Temperatura atual de ${a.temp.atual}°C`;
+    if (a.setpoint && a.setpoint.atual !== null) {
+      if (a.acimaSetpoint) {
+        s += `, ${Math.abs(a.desvioAtual)}°C acima do setpoint (${a.setpoint.atual}°C)`;
+        if (a.minutosAcima) s += `, e nessa condição há ~${a.minutosAcima} min`;
+      } else {
+        s += `, dentro da faixa do setpoint (${a.setpoint.atual}°C)`;
+      }
+    }
+    s += ".";
+    if (a.temp.tendencia && a.temp.tendencia !== "estável") s += ` Tendência ${a.temp.tendencia}.`;
+    partes.push(s);
+
+    if (a.acimaSetpoint) {
+      const grave = (a.minutosAcima && a.minutosAcima >= 30) || (a.desvioAtual && a.desvioAtual >= 5);
+      if (grave) partes.push("Desvio elevado/prolongado — há risco à conservação dos produtos.");
+      partes.push("Causas prováveis: " + causaProvavel(alarme) + ".");
+      partes.push("Ação recomendada: " + acaoRecomendada(alarme, grave) + ".");
+    } else {
+      partes.push("Equipamento sob controle no momento; acompanhar a evolução das próximas leituras.");
+    }
+  } else {
+    partes.push(
+      `Sem leitura de telemetria recente para ${alarme.dispositivoNm || "o equipamento"}` +
+      (alarme.alarmeDesc ? ` (alarme: ${alarme.alarmeDesc})` : "") +
+      ". Verifique a comunicação/sinal do controlador no local."
+    );
+  }
+  return partes.join(" ");
+}
+
+function _txtAlarme(alarme) {
+  return [alarme.alarmeDesc, alarme.grupoNm, alarme.subgrupoNm].filter(Boolean).join(" ").toLowerCase();
+}
+function causaProvavel(alarme) {
+  const t = _txtAlarme(alarme);
+  if (/degelo/.test(t)) return "ciclo de degelo prolongado ou resistência de degelo travada";
+  if (/compressor/.test(t)) return "falha, desarme ou sobrecarga do compressor";
+  if (/comunica|sinal|offline|conex/.test(t)) return "perda de comunicação do controlador (não necessariamente falha de refrigeração)";
+  if (/porta/.test(t)) return "porta aberta por tempo excessivo ou vedação comprometida";
+  if (/aliment|energia|tens[aã]o/.test(t)) return "falha de alimentação elétrica do equipamento";
+  if (/alta|temperatura/.test(t)) return "porta aberta, condensador sujo, degelo travado ou falha no compressor";
+  return "falha no sistema de refrigeração do equipamento";
+}
+function acaoRecomendada(alarme, grave) {
+  const t = _txtAlarme(alarme);
+  if (/comunica|sinal|offline|conex/.test(t)) return "checar comunicação e energia do controlador antes de assumir falha de refrigeração";
+  if (/porta/.test(t)) return "conferir o fechamento e a vedação da porta do equipamento";
+  const base = "verificar porta, condensador e funcionamento do compressor";
+  return grave ? base + "; se não normalizar rapidamente, acionar a assistência técnica" : base;
+}
+
 export async function callGemini(prompt, maxTokens = 800) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {

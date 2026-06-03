@@ -1,163 +1,61 @@
-/* charts.js
- * --------------------------------------------------------------
- * Wrappers finos sobre Chart.js para manter um tema visual consistente
- * com os tokens de design. Cada função renderiza no canvas alvo e
- * retorna a instância (útil para .destroy() em re-renders).
- * --------------------------------------------------------------
- */
+/* ============================================================
+   charts.js — gráficos (tema claro "Freezer Controle")
+   ============================================================ */
 window.GalileoCharts = (function () {
   const palette = {
-    fg: "#e7ecf2",
-    muted: "#8a94a6",
-    dim: "#5a6477",
-    line: "#232b39",
-    accent: "#76e0c8",
-    critical: "#ff6b6b",
-    warning: "#f5b942",
-    info: "#6cb6ff",
-    bg: "#10141b",
+    critico: "#d8443c",
+    demais: "#f0a531",
+    primary: "#2178ce",
+    accent: "#2bacc6",
+    grid: "#e8eef4",
+    text: "#5a6577",
+    muted: "#8a93a3",
   };
 
-  // tema global do Chart.js (aplicado uma única vez)
   let themeApplied = false;
   function applyTheme() {
     if (themeApplied || typeof Chart === "undefined") return;
-    Chart.defaults.color = palette.muted;
-    Chart.defaults.borderColor = palette.line;
-    Chart.defaults.font.family = "JetBrains Mono, ui-monospace, monospace";
-    Chart.defaults.font.size = 11;
+    Chart.defaults.color = palette.text;
+    Chart.defaults.borderColor = palette.grid;
+    Chart.defaults.font.family = "'Plus Jakarta Sans', system-ui, sans-serif";
+    Chart.defaults.font.size = 12;
     themeApplied = true;
   }
 
-  // mantém referências por canvas pra fazer destroy em re-renders
   const instances = new Map();
-
   function destroyIfExists(canvasId) {
     const inst = instances.get(canvasId);
-    if (inst) {
-      inst.destroy();
-      instances.delete(canvasId);
-    }
+    if (inst) { inst.destroy(); instances.delete(canvasId); }
   }
 
-  function renderCriticidade(canvasId, dist) {
+  /* Barras empilhadas: alarmes por empresa (críticos + demais) */
+  function renderEmpresas(canvasId, empresas) {
     applyTheme();
     destroyIfExists(canvasId);
     const el = document.getElementById(canvasId);
     if (!el) return;
-
-    const labels = Object.keys(dist).filter((k) => dist[k] > 0);
-    const data = labels.map((k) => dist[k]);
-    const colors = labels.map((k) => {
-      if (k === "Crítica") return "#dc2626"; // vermelho mais escuro/intenso que Alta
-      if (k === "Alta") return palette.critical;
-      if (k === "Média") return palette.warning;
-      if (k === "Baixa") return palette.info;
-      if (k === "Informativa") return palette.accent;
-      return palette.dim;
-    });
-
-    const inst = new Chart(el, {
-      type: "doughnut",
-      data: {
-        labels,
-        datasets: [
-          {
-            data,
-            backgroundColor: colors,
-            borderColor: palette.bg,
-            borderWidth: 3,
-            hoverOffset: 8,
-          },
-        ],
-      },
-      options: {
-        cutout: "65%",
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: "right",
-            labels: {
-              color: palette.muted,
-              boxWidth: 10,
-              boxHeight: 10,
-              padding: 12,
-              font: { family: "JetBrains Mono, monospace", size: 11 },
-            },
-          },
-          tooltip: {
-            backgroundColor: palette.bg,
-            borderColor: palette.line,
-            borderWidth: 1,
-            titleColor: palette.fg,
-            bodyColor: palette.muted,
-            padding: 10,
-            cornerRadius: 6,
-          },
-        },
-      },
-    });
-    instances.set(canvasId, inst);
-    return inst;
-  }
-
-  function renderTopLojas(canvasId, top) {
-    applyTheme();
-    destroyIfExists(canvasId);
-    const el = document.getElementById(canvasId);
-    if (!el) return;
-
-    const labels = top.map((t) => t.loja);
-    const data = top.map((t) => t.qtd);
-
+    const labels = empresas.map((e) => e.contaNm);
+    const criticos = empresas.map((e) => e.criticos);
+    const demais = empresas.map((e) => Math.max(0, e.alarmes - e.criticos));
     const inst = new Chart(el, {
       type: "bar",
       data: {
         labels,
         datasets: [
-          {
-            data,
-            backgroundColor: palette.accent + "cc",
-            borderColor: palette.accent,
-            borderWidth: 1,
-            borderRadius: 4,
-            barThickness: 14,
-          },
+          { label: "Críticos", data: criticos, backgroundColor: palette.critico, borderRadius: 4, maxBarThickness: 60, stack: "a" },
+          { label: "Demais", data: demais, backgroundColor: palette.demais, borderRadius: 4, maxBarThickness: 60, stack: "a" },
         ],
       },
       options: {
-        indexAxis: "y",
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: palette.bg,
-            borderColor: palette.line,
-            borderWidth: 1,
-            titleColor: palette.fg,
-            bodyColor: palette.muted,
-            padding: 10,
-            cornerRadius: 6,
-          },
+          legend: { position: "top", align: "end", labels: { usePointStyle: true, pointStyle: "circle", boxWidth: 8, padding: 16 } },
+          tooltip: { padding: 10, boxPadding: 4, usePointStyle: true },
         },
         scales: {
-          x: {
-            grid: { color: palette.line, drawBorder: false },
-            ticks: { color: palette.muted, precision: 0 },
-            beginAtZero: true,
-          },
-          y: {
-            grid: { display: false },
-            ticks: {
-              color: palette.muted,
-              callback: function (val) {
-                const label = this.getLabelForValue(val);
-                return label.length > 22 ? label.slice(0, 22) + "…" : label;
-              },
-            },
-          },
+          x: { stacked: true, grid: { display: false }, ticks: { autoSkip: false, maxRotation: 30, minRotation: 0, font: { size: 11 } } },
+          y: { stacked: true, beginAtZero: true, grid: { color: palette.grid }, border: { display: false }, ticks: { precision: 0 } },
         },
       },
     });
@@ -165,65 +63,40 @@ window.GalileoCharts = (function () {
     return inst;
   }
 
-  function renderTelemetria(canvasId, seriesOrPoints, meta) {
+  /* Telemetria (multi-série) — página da loja.
+     series: [{ label, color, points:[{tsLabel, valor}] }] (formato do processor) */
+  function renderTelemetria(canvasId, series) {
     applyTheme();
     destroyIfExists(canvasId);
     const el = document.getElementById(canvasId);
     if (!el) return;
+    series = Array.isArray(series) ? series.filter((s) => s && s.points && s.points.length) : [];
+    if (!series.length) return;
 
-    // Aceita dois formatos:
-    //   (a) array de séries: [{label, color, points: [{tsLabel, valor}]}]
-    //   (b) array de pontos: [{ts, valor, sensor}]  (legacy / 1 linha)
-    let series;
-    if (
-      Array.isArray(seriesOrPoints) &&
-      seriesOrPoints.length > 0 &&
-      Array.isArray(seriesOrPoints[0].points)
-    ) {
-      series = seriesOrPoints;
-    } else {
-      const pts = seriesOrPoints || [];
-      series = pts.length
-        ? [{ label: meta?.sensor || meta?.dispositivoNm || "leitura", color: null, points: pts }]
-        : [];
-    }
+    // eixo x = labels da série com mais pontos
+    const base = series.reduce((a, b) => (b.points.length > a.points.length ? b : a), series[0]);
+    const labels = base.points.map((p) => p.tsLabel);
 
-    if (!series.length || series.every((s) => !s.points.length)) {
-      // canvas vazio — escreve uma mensagem discreta
-      const ctx = el.getContext("2d");
-      ctx.clearRect(0, 0, el.width, el.height);
-      ctx.fillStyle = palette.dim;
-      ctx.font = "12px JetBrains Mono, monospace";
-      ctx.fillText("sem leituras válidas para este dispositivo", 14, 24);
-      return;
-    }
-
-    // Eixo X comum: união dos tsLabels (já vêm formatados como "HH:MM").
-    // Como as séries vêm sincronizadas (mesmos labels da API), basta usar a maior.
-    const longest = series.reduce(
-      (best, s) => (s.points.length > best.length ? s.points : best),
-      []
-    );
-    const labels = longest.map((p) => p.tsLabel || "");
-
-    const fallbackColors = [palette.accent, palette.warning, palette.info, palette.critical, "#a78bfa"];
+    const colorFor = (label, i) => {
+      const l = (label || "").toLowerCase();
+      if (l.includes("setpoint")) return palette.demais;
+      if (l.includes("temperatura ambiente") || (l.includes("temperatura") && !/degelo|suc|evap/.test(l))) return palette.primary;
+      const cyc = [palette.primary, palette.accent, palette.critico, palette.demais, "#8b5cf6"];
+      return cyc[i % cyc.length];
+    };
 
     const datasets = series.map((s, i) => {
-      // mapeia points → array alinhado aos labels (preenche null onde falta)
-      const valByLabel = new Map(s.points.map((p) => [p.tsLabel, p.valor]));
-      const data = labels.map((lb) => (valByLabel.has(lb) ? valByLabel.get(lb) : null));
-      const color = s.color || fallbackColors[i % fallbackColors.length];
+      const map = new Map(s.points.map((p) => [p.tsLabel, p.valor]));
+      const isSetpoint = /setpoint/i.test(s.label);
       return {
         label: s.label,
-        data,
-        borderColor: color,
-        backgroundColor: color + "22",
-        borderWidth: 1.6,
+        data: labels.map((l) => (map.has(l) ? map.get(l) : null)),
+        borderColor: s.color || colorFor(s.label, i),
+        backgroundColor: "transparent",
+        borderWidth: isSetpoint ? 1.5 : 2,
+        borderDash: isSetpoint ? [5, 4] : [],
         pointRadius: 0,
-        pointHoverRadius: 4,
-        pointHoverBackgroundColor: color,
-        tension: 0.25,
-        fill: false,
+        tension: 0.35,
         spanGaps: true,
       };
     });
@@ -234,43 +107,11 @@ window.GalileoCharts = (function () {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        interaction: { mode: "nearest", intersect: false },
-        plugins: {
-          legend: {
-            position: "top",
-            align: "end",
-            labels: {
-              color: palette.muted,
-              boxWidth: 10,
-              boxHeight: 10,
-              padding: 12,
-              font: { family: "JetBrains Mono, monospace", size: 11 },
-            },
-          },
-          tooltip: {
-            backgroundColor: palette.bg,
-            borderColor: palette.line,
-            borderWidth: 1,
-            titleColor: palette.fg,
-            bodyColor: palette.muted,
-            padding: 10,
-            cornerRadius: 6,
-          },
-        },
+        interaction: { mode: "index", intersect: false },
+        plugins: { legend: { position: "top", align: "end", labels: { usePointStyle: true, pointStyle: "line", boxWidth: 22, padding: 14 } } },
         scales: {
-          x: {
-            grid: { color: palette.line, drawBorder: false },
-            ticks: {
-              color: palette.dim,
-              maxRotation: 0,
-              autoSkip: true,
-              autoSkipPadding: 16,
-            },
-          },
-          y: {
-            grid: { color: palette.line, drawBorder: false },
-            ticks: { color: palette.dim },
-          },
+          x: { grid: { display: false }, ticks: { maxTicksLimit: 8, autoSkip: true } },
+          y: { grid: { color: palette.grid }, border: { display: false }, ticks: { callback: (v) => v + "°" } },
         },
       },
     });
@@ -278,10 +119,5 @@ window.GalileoCharts = (function () {
     return inst;
   }
 
-  return {
-    renderCriticidade,
-    renderTopLojas,
-    renderTelemetria,
-    palette,
-  };
+  return { renderEmpresas, renderTelemetria, palette };
 })();

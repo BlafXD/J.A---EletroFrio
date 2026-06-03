@@ -1,103 +1,67 @@
-/* design tokens — galileo watch */
+/* ============================================================
+   tokens.css — Design System "Freezer Controle"
+   Tema claro azul/ciano (refrigeração). Cores em oklch.
+   ============================================================ */
 :root {
+  /* raio de borda */
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 8px);
+  --radius-full: 999px;
+
   /* superfícies */
-  --bg: #0a0d12;
-  --bg-elev-1: #10141b;
-  --bg-elev-2: #161b24;
-  --bg-elev-3: #1c2230;
-  --line: #232b39;
-  --line-strong: #2e3849;
+  --background: oklch(0.98 0.012 230);
+  --foreground: oklch(0.18 0.04 240);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.18 0.04 240);
+  --muted: oklch(0.95 0.015 225);
+  --muted-foreground: oklch(0.5 0.04 240);
+  --border: oklch(0.9 0.02 225);
+  --border-strong: oklch(0.85 0.03 225);
+  --input: oklch(0.92 0.02 225);
 
-  /* texto */
-  --fg: #e7ecf2;
-  --fg-muted: #8a94a6;
-  --fg-dim: #5a6477;
+  /* marca */
+  --primary: oklch(0.55 0.16 230);
+  --primary-hover: oklch(0.49 0.16 230);
+  --primary-foreground: oklch(0.99 0 0);
+  --accent: oklch(0.7 0.15 200);
 
-  /* acentos */
-  --accent: #76e0c8;        /* teal — primário */
-  --accent-soft: #76e0c81a;
-  --critical: #ff6b6b;      /* alarme crítico */
-  --critical-soft: #ff6b6b1a;
-  --warning: #f5b942;       /* médio */
-  --warning-soft: #f5b9421a;
-  --info: #6cb6ff;          /* baixo / info */
-  --info-soft: #6cb6ff1a;
+  /* estados semânticos */
+  --success: oklch(0.6 0.15 150);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.72 0.17 70);
+  --danger: oklch(0.58 0.22 25);
+  --danger-foreground: oklch(0.99 0 0);
+
+  /* tints (fundos suaves dos ícones / badges) */
+  --tint-primary: oklch(0.93 0.045 230);
+  --tint-accent: oklch(0.93 0.05 200);
+  --tint-warning: oklch(0.94 0.07 75);
+  --tint-danger: oklch(0.94 0.07 25);
+  --tint-success: oklch(0.93 0.06 150);
+
+  /* gradiente do logo (floco) */
+  --gradient-frost: linear-gradient(135deg, oklch(0.55 0.16 230), oklch(0.7 0.15 200));
+
+  /* cores para Chart.js (canvas — hex equivalentes ao oklch acima) */
+  --chart-critico: #d8443c;
+  --chart-demais: #f0a531;
+  --chart-primary: #2178ce;
+  --chart-accent: #2bacc6;
+  --chart-grid: #e6edf3;
 
   /* tipografia */
-  --font-display: "Bricolage Grotesque", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-sans: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 
-  /* raios */
-  --r-sm: 4px;
-  --r-md: 8px;
-  --r-lg: 14px;
+  /* sombras (tom frio) */
+  --shadow-xs: 0 1px 2px oklch(0.5 0.06 240 / 0.05);
+  --shadow-sm: 0 1px 3px oklch(0.5 0.06 240 / 0.07), 0 1px 2px oklch(0.5 0.06 240 / 0.04);
+  --shadow-md: 0 4px 16px oklch(0.5 0.08 240 / 0.08);
+  --shadow-lg: 0 16px 40px oklch(0.5 0.1 240 / 0.12);
 
-  /* sombras */
-  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.02) inset,
-                 0 12px 24px -16px rgba(0, 0, 0, 0.6);
-
-  /* gaps */
-  --gap-1: 4px;
-  --gap-2: 8px;
-  --gap-3: 12px;
-  --gap-4: 16px;
-  --gap-5: 24px;
-  --gap-6: 32px;
-}
-
-html {
-  font-family: var(--font-display);
-  font-weight: 400;
-  color: var(--fg);
-  background: var(--bg);
-}
-
-body {
-  background:
-    radial-gradient(900px 500px at 12% -10%, rgba(118, 224, 200, 0.06), transparent 60%),
-    radial-gradient(700px 400px at 92% 10%, rgba(245, 185, 66, 0.04), transparent 60%),
-    var(--bg);
-  min-height: 100vh;
-  overflow-x: hidden;
-}
-
-/* textura sutil de grão */
-.grain {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  opacity: 0.025;
-  z-index: 0;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1   0 0 0 0 1   0 0 0 0 1   0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
-  mix-blend-mode: overlay;
-}
-
-h1,
-h2,
-h3 {
-  font-family: var(--font-display);
-  font-weight: 500;
-  letter-spacing: -0.01em;
-}
-
-::selection {
-  background: var(--accent-soft);
-  color: var(--fg);
-}
-
-/* scrollbar discreta */
-::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: var(--bg-elev-3);
-  border-radius: 10px;
-  border: 2px solid var(--bg);
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--line-strong);
+  /* layout */
+  --container: 1200px;
+  --header-h: 68px;
 }

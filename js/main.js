@@ -1,17 +1,8 @@
-/* main.js
- * --------------------------------------------------------------
- * Orquestrador: amarra todos os módulos. Mantém o estado da PoC
- * em memória (state.data) e re-renderiza quando muda.
- *
- * Fluxo de uma carga:
- *   1) API → JSON cru de alarmes/unidades/telemetria
- *   2) Processor → normaliza, deduplica, descarta últimos 5 da telemetria
- *   3) Processor → enriquece alarmes com cadastro da loja (join)
- *   4) Analytics → calcula KPIs e séries para os charts
- *   5) Charts/UI → renderiza
- *   6) RAG → reindexa chunks textuais para consulta
- * --------------------------------------------------------------
- */
+/* ============================================================
+   main.js — orquestração do dashboard "Freezer Controle"
+   Mantém a camada de dados (api/processor/analytics/rag) intacta;
+   só muda a apresentação (por empresa).
+   ============================================================ */
 (function () {
   const cfg = window.GALILEO_CONFIG;
   const api = window.GalileoAPI;
@@ -23,196 +14,118 @@
 
   const state = {
     data: null,
+    empresas: [],
     ragEngine: null,
-    currentDispositivoId: cfg.telemetria.defaultDispositivoId,
+    filtroCriticos: false,
   };
 
-  /* ---------- carregamento inicial ---------- */
+  /* ---------- carregamento ---------- */
   async function load() {
-    ui.setStatus("load", "ingerindo endpoints…");
+    ui.setStatus("loading", "Carregando dados…");
     try {
       const [alarmesRaw, unidadesRaw, telemetriaRaw] = await Promise.all([
         api.getAlarmes(),
         api.getUnidades(),
-        api.getTelemetria(state.currentDispositivoId),
+        api.getTelemetria(cfg.telemetria.defaultDispositivoId),
       ]);
 
-      ui.setStatus("load", "normalizando e enriquecendo…");
       const data = proc.process({ alarmesRaw, unidadesRaw, telemetriaRaw });
-      data.telemetriaDispositivoId = state.currentDispositivoId;
       state.data = data;
+      state.empresas = analytics.porEmpresa(data.alarmes, data.unidades);
 
-      ui.setStatus("load", "renderizando dashboard…");
       renderAll();
 
-      ui.setStatus("load", "indexando para RAG…");
-      state.ragEngine = rag.createEngine(data);
+      // indexa para o assistente (RAG) — não bloqueia o dashboard se falhar
+      try {
+        state.ragEngine = rag.createEngine(data);
+      } catch (e) {
+        console.warn("[main] RAG não pôde ser indexado:", e);
+      }
 
-      ui.setStatus(
-        "ok",
-        `ok · ${data.alarmes.filter((a) => a.ativo).length} alarmes ativos · ` +
-          `${state.ragEngine.chunksCount} chunks indexados`
-      );
-      console.info("[main] pipeline finalizado", data.meta);
+      const t = analytics.totaisGerais(state.empresas);
+      ui.setStatus("ok", `${t.empresas} empresas · ${t.lojas} lojas · ${t.alarmes} alarmes`);
+      console.info("[main] pipeline ok", data.meta);
     } catch (e) {
-      console.error("[main] falha no pipeline", e);
-      ui.setStatus("err", e.message || "erro desconhecido");
-    }
-  }
-
-  /* ---------- só telemetria (mudança de dispositivo) ---------- */
-  async function reloadTelemetria(dispositivoId) {
-    if (!state.data) return;
-    ui.setStatus("load", `coletando telemetria do dispositivo ${dispositivoId}…`);
-    try {
-      const raw = await api.getTelemetria(dispositivoId);
-      const processed = proc.process({
-        alarmesRaw: [],
-        unidadesRaw: [],
-        telemetriaRaw: raw,
-      });
-
-      state.data.telemetria = processed.telemetria;
-      state.data.telemetriaSeries = processed.telemetriaSeries;
-      state.data.telemetriaDispositivoId = dispositivoId;
-      state.currentDispositivoId = dispositivoId;
-
-      renderTelemetria();
-      // Reindexa pra o RAG falar sobre o novo dispositivo
-      state.ragEngine = rag.createEngine(state.data);
-      ui.setStatus(
-        "ok",
-        `telemetria atualizada · ${processed.telemetriaSeries.length} série(s), ` +
-          `${processed.telemetria.length} pontos na principal`
-      );
-    } catch (e) {
-      ui.setStatus("err", `falha telemetria: ${e.message}`);
+      console.error("[main] falha no pipeline:", e);
+      ui.setStatus("error", "Falha ao carregar. Nova tentativa no próximo ciclo.");
     }
   }
 
   /* ---------- render orquestrado ---------- */
   function renderAll() {
-    const d = state.data;
-    if (!d) return;
-
-    ui.renderKPIs(d);
-
-    charts.renderCriticidade("chart-criticidade", analytics.porCriticidade(d.alarmes));
-    charts.renderTopLojas("chart-lojas", analytics.topLojasPorAlarmes(d.alarmes, 10));
-    renderTelemetria();
-
-    ui.renderTabela(d.alarmes, getFiltrosTabela());
+    const totais = analytics.totaisGerais(state.empresas);
+    ui.renderKPIs(totais);
+    charts.renderEmpresas("chart-empresas", analytics.topEmpresasAlarmes(state.empresas, 8));
+    aplicarFiltro();
+    bindVerCriticos();
   }
 
-  function renderTelemetria() {
-    const d = state.data;
-    if (!d) return;
-    charts.renderTelemetria("chart-telemetria", d.telemetriaSeries || [], {
-      dispositivoNm: `dispositivo ${state.currentDispositivoId}`,
+  function aplicarFiltro() {
+    const termo = (document.getElementById("busca-empresa")?.value || "").trim().toLowerCase();
+    let lista = state.empresas;
+    if (state.filtroCriticos) lista = lista.filter((e) => e.criticos > 0);
+    if (termo) lista = lista.filter((e) => String(e.contaNm).toLowerCase().includes(termo));
+    ui.renderEmpresas(lista);
+  }
+
+  function bindVerCriticos() {
+    const btn = document.getElementById("ver-criticos");
+    if (!btn) return;
+    btn.addEventListener("click", () => {
+      state.filtroCriticos = !state.filtroCriticos;
+      btn.textContent = state.filtroCriticos ? "Mostrar todas" : "Ver todos";
+      aplicarFiltro();
+      document.getElementById("empresa-grid")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
-    const stats = analytics.statsTelemetria(d.telemetria);
-    const nSeries = d.telemetriaSeries?.length || 0;
-    ui.setTelemetriaMeta(
-      stats
-        ? `dispositivoId ${state.currentDispositivoId} · ${nSeries} série(s) · ` +
-            `principal: ${stats.n} pontos · ` +
-            `média ${stats.avg} · min ${stats.min} · max ${stats.max} · valores nulos do fim descartados`
-        : `dispositivoId ${state.currentDispositivoId} · sem leituras válidas`
-    );
-  }
-
-  /* ---------- filtros da tabela ---------- */
-  function getFiltrosTabela() {
-    return {
-      criticidade: document.getElementById("filtro-critic")?.value || "",
-      q: document.getElementById("busca-alarme")?.value || "",
-    };
   }
 
   /* ---------- handlers ---------- */
   function bindEvents() {
-    document.getElementById("refresh-btn")?.addEventListener("click", load);
-
-    document.getElementById("filtro-critic")?.addEventListener("change", () => {
-      if (state.data) ui.renderTabela(state.data.alarmes, getFiltrosTabela());
-    });
-
     let buscaTO;
-    document.getElementById("busca-alarme")?.addEventListener("input", () => {
+    document.getElementById("busca-empresa")?.addEventListener("input", () => {
       clearTimeout(buscaTO);
-      buscaTO = setTimeout(() => {
-        if (state.data) ui.renderTabela(state.data.alarmes, getFiltrosTabela());
-      }, 200);
+      buscaTO = setTimeout(aplicarFiltro, 180);
     });
 
-    document.getElementById("dispositivo-btn")?.addEventListener("click", () => {
-      const inp = document.getElementById("dispositivo-input");
-      const id = String(inp?.value || "").trim();
-      if (id) reloadTelemetria(id);
-    });
-
-    document.getElementById("dispositivo-input")?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        document.getElementById("dispositivo-btn")?.click();
-      }
-    });
-
-    // RAG
-    const form = document.getElementById("rag-form");
-    form?.addEventListener("submit", (e) => {
+    document.getElementById("chat-form")?.addEventListener("submit", (e) => {
       e.preventDefault();
-      const txt = document.getElementById("rag-input")?.value || "";
-      askRAG(txt);
+      const inp = document.getElementById("chat-input");
+      const q = String(inp?.value || "").trim();
+      if (!q) return;
+      inp.value = "";
+      askRAG(q);
     });
 
-    document.querySelectorAll(".chip[data-q]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const q = btn.getAttribute("data-q") || "";
-        const inp = document.getElementById("rag-input");
-        if (inp) inp.value = q;
-        askRAG(q);
-      });
-    });
-
-    // polling automático (alarmes a cada 5 min)
+    // polling automático (alarmes/unidades a cada 5 min)
     setInterval(() => {
       if (state.data) {
-        console.info("[main] polling automático de alarmes/unidades");
+        console.info("[main] polling automático");
         load();
       }
     }, cfg.polling.alarmes_ms);
   }
 
+  /* ---------- assistente (RAG) ---------- */
   async function askRAG(question) {
-    const q = String(question || "").trim();
-    if (!q) return;
+    ui.chatUser(question);
+    const node = ui.chatTyping();
     if (!state.ragEngine) {
-      ui.renderAnswer({
-        answer: "Aguarde a ingestão inicial dos dados terminar para usar o RAG.",
-        sources: [],
-      });
+      ui.chatBot({ answer: "Ainda estou indexando os dados — tente novamente em instantes.", source: "regras" }, node);
       return;
     }
-    ui.renderAnswerLoading();
     try {
-      const result = await state.ragEngine.ask(q, 5);
-      ui.renderAnswer(result);
+      const result = await state.ragEngine.ask(question, 5);
+      ui.chatBot(result, node);
     } catch (e) {
       console.error("[main] askRAG erro:", e);
-      ui.renderAnswer({
-        answer: "Falha ao processar a pergunta: " + e.message,
-        sources: [],
-        source: "error",
-      });
+      ui.chatBot({ answer: "Falha ao processar a pergunta: " + e.message, source: "error" }, node);
     }
   }
 
   /* ---------- boot ---------- */
   function boot() {
-    ui.startClock();
+    ui.renderParametros();
     bindEvents();
-    // garante que Chart.js carregou (script com defer)
     if (typeof Chart === "undefined") {
       window.addEventListener("load", load);
     } else {
