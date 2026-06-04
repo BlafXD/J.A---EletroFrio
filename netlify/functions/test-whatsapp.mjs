@@ -18,7 +18,7 @@
 import { getStore } from "@netlify/blobs";
 import {
   fetchAlarmes, fetchUnidades, fetchTelemetria, processData,
-  analisarTelemetria, resumirTelemetria, gerarDiagnostico,
+  analisarTelemetria, resumirTelemetria, gerarDiagnostico, diagnosticoFactual,
   buildAlertHeader, sendWhatsApp, normNumero,
 } from "../lib/galileo.mjs";
 
@@ -53,18 +53,24 @@ export default async (req) => {
     const alarme = criticos[0];
 
     // telemetria + análise + diagnóstico
+    let analise = null;
     let resumoTel = "Telemetria indisponível.";
     if (alarme.dispositivoId) {
       try {
         const tel = await fetchTelemetria(alarme.dispositivoId);
-        resumoTel = resumirTelemetria(analisarTelemetria(tel));
+        analise = analisarTelemetria(tel);
+        resumoTel = resumirTelemetria(analise);
       } catch (e) {
         console.error("[test] telemetria falhou:", e.message);
       }
     }
-    const diagnostico =
-      (await gerarDiagnostico(alarme, resumoTel)) ||
-      "Verifique o equipamento: leitura fora do esperado para a operação normal.";
+    // factual por padrão; IA só se habilitada (mesma regra do monitor)
+    const aiOn = String(process.env.AI_DIAGNOSIS_ENABLED ?? "true").toLowerCase() !== "false";
+    let diagnostico = diagnosticoFactual(alarme, analise);
+    if (aiOn) {
+      const ia = await gerarDiagnostico(alarme, resumoTel);
+      if (ia) diagnostico = ia;
+    }
 
     const body =
       buildAlertHeader(alarme, { teste: !modoReal }) +

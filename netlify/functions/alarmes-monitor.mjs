@@ -29,9 +29,21 @@ export const config = {
 };
 
 const CRITICIDADES_ALERTA = ["Crítica", "Alta"];
-const MAX_POR_EXECUCAO = 3; // cada alarme faz fetch de telemetria + Gemini, então limitamos
+const MAX_POR_EXECUCAO = 3; // máx. de alarmes PROCESSADOS por execução (limita custo/quota)
+
+// Interruptores via env var (sem redeploy: muda no painel do Netlify e vale no próximo ciclo).
+//   ALERTS_ENABLED=false        → desliga TODO envio automático de WhatsApp (kill switch)
+//   AI_DIAGNOSIS_ENABLED=false  → não chama o Gemini; usa só o diagnóstico factual (zero 429)
+const ALERTS_ENABLED = String(process.env.ALERTS_ENABLED ?? "true").toLowerCase() !== "false";
+const AI_DIAGNOSIS_ENABLED = String(process.env.AI_DIAGNOSIS_ENABLED ?? "true").toLowerCase() !== "false";
 
 export default async () => {
+  // Kill switch: pausa o envio automático sem precisar remover o cron nem redeployar.
+  if (!ALERTS_ENABLED) {
+    console.log("[monitor] ALERTS_ENABLED=false — envio automático desativado, nada enviado.");
+    return new Response("alerts disabled (ALERTS_ENABLED=false)");
+  }
+
   const sid = process.env.TWILIO_ACCOUNT_SID;
   const token = process.env.TWILIO_AUTH_TOKEN;
   const from = process.env.TWILIO_WHATSAPP_FROM;
@@ -65,12 +77,13 @@ export default async () => {
     return new Response(`bootstrap ok (${criticos.length} marcados)`);
   }
 
-  let enviados = 0, novos = 0;
+  let enviados = 0, novos = 0, tentativas = 0;
   for (const a of criticos) {
-    if (enviados >= MAX_POR_EXECUCAO) break;
+    if (tentativas >= MAX_POR_EXECUCAO) break; // limita TENTATIVAS por ciclo (não só envios)
     const key = `a:${a.alarmeId}`;
     if (await store.get(key).catch(() => null)) continue;
     novos++;
+    tentativas++;
 
     // 1-2. telemetria do dispositivo + análise factual
     let analise = null;
@@ -85,11 +98,14 @@ export default async () => {
       }
     }
 
-    // 3. diagnóstico: tenta IA; se a quota do Gemini estiver esgotada (429),
-    //    cai no diagnóstico FACTUAL por regras — que usa os números reais da
-    //    telemetria e não inventa nada. O alerta sai útil com ou sem IA.
-    const diagnosticoIA = await gerarDiagnostico(a, resumoTel);
-    const diagnostico = diagnosticoIA || diagnosticoFactual(a, analise);
+    // 3. o diagnóstico FACTUAL por regras é sempre a base (usa os números reais
+    //    da telemetria, não inventa). A IA só entra se habilitada — assim, com
+    //    AI_DIAGNOSIS_ENABLED=false, o Gemini não é chamado e não há nenhum 429.
+    let diagnostico = diagnosticoFactual(a, analise);
+    if (AI_DIAGNOSIS_ENABLED) {
+      const diagnosticoIA = await gerarDiagnostico(a, resumoTel);
+      if (diagnosticoIA) diagnostico = diagnosticoIA;
+    }
 
     // 4. mensagem = cabeçalho + diagnóstico + link para o painel da loja
     const siteUrl = (process.env.URL || "https://radiant-sunburst-1294db.netlify.app").replace(/\/$/, "");
@@ -119,6 +135,6 @@ export default async () => {
     }
   }
 
-  console.log(`[monitor] ${novos} novo(s), ${enviados} notificado(s)`);
+  console.log(`[monitor] ${novos} novo(s), ${enviados} notificado(s), ${tentativas} tentativa(s)`);
   return new Response(`ok: ${enviados} notificados de ${novos} novos`);
 };
