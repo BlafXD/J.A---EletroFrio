@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Loja — Freezer Controle</title>
+  <title>Admin — Freezer Controle</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -12,7 +12,6 @@
   <link rel="stylesheet" href="css/layout.css" />
   <link rel="stylesheet" href="css/components.css" />
   <link rel="stylesheet" href="css/mobile.css" />
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
 <body>
   <header class="topbar">
@@ -30,46 +29,58 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
         <span>Dashboard</span>
       </a>
-      <a class="nav__link" href="admin.html">
+      <a class="nav__link is-active" href="admin.html">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
         <span>Admin</span>
+      </a>
+      <a class="nav__link" href="index.html">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" x2="3" y1="12" y2="12"/></svg>
+        <span>Entrar como loja</span>
       </a>
     </nav>
   </header>
 
   <div class="page">
-    <a class="back" id="back-link" href="index.html">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 19-7-7 7-7"/><path d="M19 12H5"/></svg>
-      Voltar
-    </a>
-
-    <div class="emp-hero">
-      <span class="emp-hero__icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 4.41-4.41A2 2 0 0 1 7.83 2h8.34a2 2 0 0 1 1.42.59L22 7"/><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><path d="M15 22v-4a2 2 0 0 0-2-2h-2a2 2 0 0 0-2 2v4"/><path d="M2 7h20"/></svg></span>
-      <div>
-        <h1 class="emp-hero__name" id="loja-nome">Carregando…</h1>
-        <p class="emp-hero__sub" id="loja-sub">&nbsp;</p>
+    <div class="hero">
+      <h1 class="hero__title">Administração</h1>
+      <p class="hero__sub">Todos os alarmes ativos, em um só lugar. Filtre, busque e abra a loja afetada.</p>
+      <div class="status" id="status" data-state="loading" style="margin-top:.6rem">
+        <span class="status__dot"></span>
+        <span id="status-text">Carregando alarmes…</span>
       </div>
     </div>
 
-    <div class="loja__meta" id="loja-meta"></div>
+    <section class="card panel section">
+      <div class="toolbar">
+        <div class="filtros" id="filtros"></div>
+        <button class="btn btn--ghost btn--sm" id="btn-export">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+          Exportar CSV
+        </button>
+      </div>
 
-    <div class="section">
-      <div class="section__head">
-        <div class="section__title">Máquinas monitoradas</div>
-        <div class="section__sub">Telemetria real e o que aconteceu em cada equipamento — só com base nas leituras.</div>
+      <div class="search" style="max-width:100%;margin-bottom:1.1rem">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" id="busca" placeholder="Buscar por loja, empresa, dispositivo ou alarme..." autocomplete="off" />
       </div>
-      <div class="disp-grid" id="dispositivos">
-        <div class="empty">Carregando equipamentos…</div>
+
+      <div class="alarmes-table">
+        <div class="alarmes-head">
+          <span>Criticidade</span><span>Loja</span><span>Empresa</span><span>Dispositivo</span><span>Alarme</span><span style="text-align:right">Aberto há</span>
+        </div>
+        <div id="alarmes-body">
+          <div class="alarmes-empty">Carregando…</div>
+        </div>
       </div>
-    </div>
+      <div class="admin-resumo" id="resumo"></div>
+    </section>
   </div>
 
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
   <script src="js/processor.js"></script>
   <script src="js/analytics.js"></script>
-  <script src="js/charts.js"></script>
   <script src="js/ui.js"></script>
-  <script src="js/loja-page.js"></script>
+  <script src="js/admin-page.js"></script>
 </body>
 </html>

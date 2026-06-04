@@ -34,6 +34,7 @@ window.GalileoCharts = (function () {
     destroyIfExists(canvasId);
     const el = document.getElementById(canvasId);
     if (!el) return;
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
     const labels = empresas.map((e) => e.contaNm);
     const criticos = empresas.map((e) => e.criticos);
     const demais = empresas.map((e) => Math.max(0, e.alarmes - e.criticos));
@@ -54,7 +55,20 @@ window.GalileoCharts = (function () {
           tooltip: { padding: 10, boxPadding: 4, usePointStyle: true },
         },
         scales: {
-          x: { stacked: true, grid: { display: false }, ticks: { autoSkip: false, maxRotation: 30, minRotation: 0, font: { size: 11 } } },
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: {
+              autoSkip: false,
+              maxRotation: isMobile ? 65 : 30,
+              minRotation: isMobile ? 45 : 0,
+              font: { size: isMobile ? 9 : 11 },
+              callback: function (value) {
+                const l = this.getLabelForValue(value);
+                return isMobile && l && l.length > 12 ? l.slice(0, 11) + "…" : l;
+              },
+            },
+          },
           y: { stacked: true, beginAtZero: true, grid: { color: palette.grid }, border: { display: false }, ticks: { precision: 0 } },
         },
       },

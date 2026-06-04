@@ -1,0 +1,98 @@
+/* ============================================================
+   mobile.css — refinamento para telas pequenas
+   O alerta do WhatsApp abre a página da loja no celular, então
+   o foco principal aqui é deixar loja.html impecável no mobile.
+   Carregado por último para ter precedência nos ajustes.
+   ============================================================ */
+
+/* ---------- Tablet / telas médias ---------- */
+@media (max-width: 820px) {
+  .emp-hero { gap: 0.85rem; margin-bottom: 1.4rem; }
+  .emp-hero__icon { width: 50px; height: 50px; border-radius: 14px; }
+  .emp-hero__icon svg { width: 26px; height: 26px; }
+  .chart-box { height: 320px; }
+}
+
+/* ---------- Celular (maioria dos aparelhos) ---------- */
+@media (max-width: 640px) {
+  /* base */
+  .page { padding: 1.25rem 0.9rem 3rem; }
+  .section { margin-top: 1.25rem; }
+  .hero__title { font-size: 1.7rem; }
+
+  /* header mais compacto */
+  .brand__logo { width: 38px; height: 38px; border-radius: 11px; }
+  .brand__logo svg { width: 21px; height: 21px; }
+  .brand__name { font-size: 0.98rem; }
+
+  /* KPIs (dashboard) */
+  .kpi { padding: 1.1rem 1.15rem; gap: 0.9rem; }
+  .kpi__icon { width: 46px; height: 46px; border-radius: 12px; }
+  .kpi__icon svg { width: 23px; height: 23px; }
+  .kpi__value { font-size: 1.75rem; }
+
+  /* painéis e gráficos */
+  .panel { padding: 1.15rem; }
+  .panel__head { gap: 0.6rem; margin-bottom: 0.9rem; }
+  .panel__head-icon { width: 34px; height: 34px; }
+  .panel__title { font-size: 1.02rem; }
+  .chart-box { height: 290px; }
+  .chart-box--sm { height: 240px; }
+
+  /* parâmetros e cards de empresa */
+  .param { padding: 0.85rem 0.95rem; }
+  .param__range { font-size: 1.1rem; }
+  .empresa { padding: 1.1rem 1.15rem; }
+
+  /* ----- página da EMPRESA ----- */
+  .emp-hero { gap: 0.7rem; margin-bottom: 1.2rem; }
+  .emp-hero__icon { width: 44px; height: 44px; border-radius: 12px; }
+  .emp-hero__icon svg { width: 23px; height: 23px; }
+  .emp-hero__name { font-size: 1.45rem; }
+  .loja { padding: 1.15rem; }
+  .loja__meta { gap: 0.35rem 0.85rem; font-size: 0.78rem; }
+
+  /* ----- página da LOJA (prioridade — abre no celular) ----- */
+  .disp { padding: 1.15rem; }
+  .disp__head { margin-bottom: 0.8rem; }
+  .disp__name { font-size: 1.04rem; }
+  .disp__diag { font-size: 0.88rem; padding: 0.8rem 0.9rem; margin-bottom: 0.9rem; }
+
+  /* chips: vira grade 2×2 uniforme em vez de flex apertado */
+  .disp__stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 0.5rem; margin-bottom: 1rem; }
+  .stat-chip { padding: 0.55rem 0.7rem; }
+  .stat-chip__value { font-size: 1.05rem; }
+}
+
+/* ---------- Celular pequeno (<= iPhone SE / 360–400px) ---------- */
+@media (max-width: 400px) {
+  .brand__name { font-size: 0.92rem; }
+  .nav__link { padding: 0.5rem 0.5rem; }
+  .hero__title { font-size: 1.5rem; }
+  .kpi__value { font-size: 1.55rem; }
+  .disp { padding: 1rem; }
+  .chart-box { height: 260px; }
+  .chart-box--sm { height: 220px; }
+  /* setpoint/legenda do gráfico não cabem bem: damos respiro */
+  .disp__diag { font-size: 0.86rem; }
+}
+
+/* ---------- Painel Admin: tabela vira cards no celular ---------- */
+@media (max-width: 760px) {
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .alarmes-head { display: none; }
+  .alarme-linha {
+    grid-template-columns: 1fr; gap: 0.3rem;
+    padding: 1rem; border: 1px solid var(--border);
+    border-radius: var(--radius-md); margin-bottom: 0.7rem;
+  }
+  .alarme-linha:last-child { margin-bottom: 0; }
+  .alarme-linha > span[data-col]::before {
+    content: attr(data-col) ": ";
+    font-weight: 600; color: var(--muted-foreground); font-size: 0.76rem;
+  }
+  .alarme-linha > .cel-crit { margin-bottom: 0.2rem; }
+  .alarme-linha > .cel-crit::before { content: none; }
+  .cel-trunc { white-space: normal; }
+  .cel-tempo { text-align: left; }
+}
