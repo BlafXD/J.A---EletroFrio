@@ -194,136 +194,151 @@ window.GalileoRAG = (function (analytics) {
       .slice(0, k);
   }
 
-  /* ---------- síntese ----------
-   * Heurísticas leves sobre a intenção da pergunta. Para cada padrão
-   * conhecido, geramos a resposta a partir dos dados estruturados
-   * (não a partir dos chunks textuais — isso evita alucinação).
-   * Os chunks retornados pelo retriever entram como "fontes".
+  /* ---------- camada factual (sem IA) ----------
+   * Responde perguntas comuns DIRETO dos dados estruturados — sem gastar
+   * quota do Gemini e sem risco de alucinação. Retorna { text } quando a
+   * pergunta casa com uma intenção conhecida, ou null para deixar a IA
+   * responder perguntas abertas.
    */
-  function synthesize(question, retrieved, data) {
-    const q = tokenize(question).join(" ");
-    const lojaIndex = new Map();
-    for (const u of data.unidades) {
-      if (u.lojaId) lojaIndex.set(String(u.lojaId), u);
+  // normaliza para casar intencao: minusculo + sem acento, MANTENDO stopwords
+  // ("quantos", "qual" sao stopwords no tokenizer, mas importam aqui).
+  function normIntent(text) {
+    return String(text || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  function responderFactual(question, data) {
+    const q = normIntent(question);
+    if (!q) return null;
+    const ativos = data.alarmes.filter((a) => a.ativo);
+    const empresas = analytics.porEmpresa(data.alarmes, data.unidades);
+    const isCrit = (a) => analytics.isCritico(a);
+
+    // (0) saudacao / ajuda
+    if (q.split(" ").length <= 5 &&
+        /\b(oi|ola|opa|eai|salve|bom dia|boa tarde|boa noite|ajuda|ajudar|menu|faz|fazer|consegue|funciona|funcionalidade)\b/.test(q)) {
+      return { text:
+        "Oi! Sou o assistente do Freezer Controle. Com base nos dados em tempo real, posso te dizer:\n\n" +
+        "\u2022 Quantos alarmes ativos e quantos criticos\n" +
+        "\u2022 Quais lojas ou empresas tem mais alarmes criticos\n" +
+        "\u2022 A distribuicao de alarmes por criticidade\n" +
+        "\u2022 Lojas sem sinal de vida\n" +
+        "\u2022 Contratos a vencer\n" +
+        "\u2022 Os alarmes de uma empresa ou loja especifica (e so citar o nome)\n\n" +
+        "Manda a pergunta!" };
     }
 
-    /* (1) Top lojas com mais alarmes críticos ativos */
-    if (
-      (q.includes("loja") || q.includes("lojas") || q.includes("unidade")) &&
-      (q.includes("critic") || q.includes("alta") || q.includes("urgente") || q.includes("graves"))
-    ) {
-      const ativosCriticos = data.alarmes.filter(
-        (a) => a.ativo && (a.criticidade === "Alta" || a.criticidade === "Crítica")
-      );
+    // (1) alarmes de uma EMPRESA ou LOJA especifica (busca por nome)
+    if (/(alarme|critic|problema|status|situacao|esta|tem)/.test(q)) {
+      const alvoEmp = empresas.find((e) => {
+        const nome = normIntent(e.contaNm);
+        return nome.length >= 4 && q.includes(nome);
+      });
+      if (alvoEmp) {
+        return { text:
+          `Empresa ${alvoEmp.contaNm}: ${alvoEmp.lojas.length} loja(s), ` +
+          `${alvoEmp.alarmes} alarme(s) ativo(s), ${alvoEmp.criticos} critico(s).` +
+          (alvoEmp.alarmes ? "\n\nAbra o painel da empresa para ver loja a loja." : " Tudo certo no momento.") };
+      }
+      const alvoLoja = data.unidades.filter((u) => u.lojaNm).find((u) => {
+        const nome = normIntent(u.lojaNm);
+        return nome.length >= 4 && q.includes(nome);
+      });
+      if (alvoLoja) {
+        const doStore = ativos.filter((a) => String(a.lojaId) === String(alvoLoja.lojaId));
+        const crit = doStore.filter(isCrit).length;
+        if (!doStore.length) return { text: `A loja ${alvoLoja.lojaNm} nao tem alarmes ativos no momento.` };
+        const lista = doStore.slice(0, 8).map((a) => `\u2022 [${a.criticidade}] ${a.alarmeDesc || a.grupoNm} \u2014 ${a.dispositivoNm || "\u2014"}`).join("\n");
+        return { text: `Loja ${alvoLoja.lojaNm}: ${doStore.length} alarme(s) ativo(s), ${crit} critico(s).\n\n${lista}` };
+      }
+    }
+
+    // (2) distribuicao por criticidade
+    if (q.includes("distribui") || q.includes("por criticidade") || q.includes("cada criticidade") ||
+        (q.includes("criticidade") && (q.includes("quant") || q.includes("por") || q.includes("cada")))) {
+      const c = analytics.porCriticidade(ativos);
+      const linhas = ["Critica", "Alta", "Media", "Baixa", "Informativa"]
+        .map((n) => [n, c[n] !== undefined ? c[n] : (c[n.replace("Critica","Cr\u00edtica").replace("Media","M\u00e9dia")] || 0)]);
+      const reais = { "Cr\u00edtica": c["Cr\u00edtica"] || 0, "Alta": c["Alta"] || 0, "M\u00e9dia": c["M\u00e9dia"] || 0, "Baixa": c["Baixa"] || 0, "Informativa": c["Informativa"] || 0 };
+      const txt = Object.entries(reais).filter(([, v]) => v > 0).map(([n, v]) => `\u2022 ${n}: ${v}`).join("\n");
+      return { text: `Distribuicao dos ${ativos.length} alarmes ativos por criticidade:\n\n${txt || "nenhum alarme ativo."}` };
+    }
+
+    // (3) ranking: lojas/empresas com mais alarmes (criticos)
+    if ((q.includes("loja") || q.includes("unidade") || q.includes("empresa")) &&
+        (q.includes("mais") || q.includes("rank") || q.includes("top") || q.includes("critic") || q.includes("grave") || q.includes("pior"))) {
+      const porEmp = q.includes("empresa");
+      const soCrit = q.includes("critic") || q.includes("grave") || q.includes("urgente");
+      if (porEmp) {
+        const ranked = [...empresas].sort((a, b) => (soCrit ? b.criticos - a.criticos : b.alarmes - a.alarmes))
+          .filter((e) => (soCrit ? e.criticos : e.alarmes) > 0).slice(0, 6);
+        if (!ranked.length) return { text: soCrit ? "Nenhuma empresa com alarmes criticos ativos." : "Nenhuma empresa com alarmes ativos." };
+        const lista = ranked.map((e) => `\u2022 ${e.contaNm}: ${soCrit ? e.criticos + " critico(s)" : e.alarmes + " alarme(s) (" + e.criticos + " crit.)"}`).join("\n");
+        return { text: `Empresas com mais alarmes ${soCrit ? "criticos " : ""}ativos:\n\n${lista}` };
+      }
       const por = new Map();
-      for (const a of ativosCriticos) {
+      for (const a of ativos) {
+        if (soCrit && !isCrit(a)) continue;
         const nome = a.lojaApelido || a.lojaNm || `loja#${a.lojaId}`;
         por.set(nome, (por.get(nome) || 0) + 1);
       }
-      const top = [...por.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-      if (!top.length) {
-        return {
-          text: "Não há alarmes graves (Alta ou Crítica) ativos no momento.",
-        };
-      }
-      const lista = top.map(([n, q]) => `• ${n}: ${q} alarme(s) grave(s)`).join("\n");
-      return {
-        text: `Lojas com mais alarmes graves (Alta + Crítica) ativos:\n\n${lista}\n\nTotal: ${ativosCriticos.length}.`,
-      };
+      const top = [...por.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+      if (!top.length) return { text: soCrit ? "Nenhuma loja com alarmes criticos ativos." : "Nenhuma loja com alarmes ativos." };
+      const lista = top.map(([n, qt]) => `\u2022 ${n}: ${qt} alarme(s)${soCrit ? " critico(s)" : ""}`).join("\n");
+      return { text: `Lojas com mais alarmes ${soCrit ? "criticos " : ""}ativos:\n\n${lista}` };
     }
 
-    /* (2) Sem sinal de vida */
-    if (q.includes("sinal") && (q.includes("vida") || q.includes("offline") || q.includes("comunic"))) {
+    // (4) sem sinal de vida
+    if (q.includes("sinal") && (q.includes("vida") || q.includes("offline") || q.includes("comunic") || q.includes("sem sinal"))) {
       const horas = q.includes("48") ? 48 : 24;
       const sem = analytics.semSinalVida(data.unidades, horas);
-      if (!sem.length) {
-        return { text: `Todas as unidades tiveram sinal de vida nas últimas ${horas}h.` };
-      }
-      const lista = sem
-        .slice(0, 10)
-        .map(
-          (u) =>
-            `• ${u.loja}: ${u.horas_sem_sinal === null ? "sem registro" : `${u.horas_sem_sinal}h sem sinal`}`
-        )
-        .join("\n");
-      return {
-        text: `Dispositivos sem sinal de vida há mais de ${horas}h (${sem.length} total):\n\n${lista}`,
-      };
+      if (!sem.length) return { text: `Todas as unidades tiveram sinal de vida nas ultimas ${horas}h.` };
+      const lista = sem.slice(0, 10).map((u) => `\u2022 ${u.loja}: ${u.horas_sem_sinal === null ? "sem registro" : u.horas_sem_sinal + "h sem sinal"}`).join("\n");
+      return { text: `Unidades sem sinal de vida ha mais de ${horas}h (${sem.length}):\n\n${lista}` };
     }
 
-    /* (3) Contratos próximos do vencimento (com hipótese de alarmes) */
-    if ((q.includes("contrato") || q.includes("vencimento") || q.includes("vencer")) && q.length) {
+    // (5) contratos a vencer
+    if (q.includes("contrato") || q.includes("vencimento") || q.includes("vencer") || q.includes("vence")) {
       const lista = analytics.contratosComMaisAlarmes(data.alarmes, data.unidades, 8);
-      if (!lista.length) {
-        return { text: "Nenhum contrato vencendo nos próximos 60 dias." };
-      }
-      const linhas = lista
-        .map(
-          (l) =>
-            `• ${l.loja} — vence em ${l.vence_em_dias}d, contrato ${l.contrato || "—"}, ${l.alarmes_ativos} alarme(s) ativo(s)`
-        )
-        .join("\n");
-      const corr = lista.filter((l) => l.alarmes_ativos > 0).length;
-      return {
-        text:
-          `Contratos a vencer nos próximos 60 dias (${lista.length}):\n\n${linhas}\n\n` +
-          `Hipótese: ${corr} de ${lista.length} unidades a vencer apresentam alarmes ativos.`,
-      };
+      if (!lista.length) return { text: "Nenhum contrato a vencer nos proximos 60 dias." };
+      const linhas = lista.map((l) => `\u2022 ${l.loja} \u2014 vence em ${l.vence_em_dias}d${l.alarmes_ativos ? `, ${l.alarmes_ativos} alarme(s) ativo(s)` : ""}`).join("\n");
+      return { text: `Contratos a vencer nos proximos 60 dias (${lista.length}):\n\n${linhas}` };
     }
 
-    /* (4) Telemetria / temperatura média */
-    if (q.includes("temperatura") || q.includes("media") || q.includes("medio") || q.includes("telemetria")) {
+    // (6) telemetria / temperatura
+    if (q.includes("temperatura") || q.includes("telemetria")) {
       const stats = analytics.statsTelemetria(data.telemetria);
-      if (!stats) {
-        return { text: "Não há leituras de telemetria carregadas no momento." };
+      if (!stats) return { text: "Nao ha leituras de telemetria carregadas aqui. Abra o painel de uma loja para ver a telemetria por equipamento." };
+      return { text:
+        `Telemetria do dispositivo monitorado (${stats.n} leituras validas):\n\n` +
+        `\u2022 Media: ${stats.avg}\u00b0C\n\u2022 Minimo: ${stats.min}\u00b0C\n\u2022 Maximo: ${stats.max}\u00b0C\n` +
+        `\u2022 Ultima: ${stats.ultima.valor}\u00b0C${stats.ultima.tsLabel ? " as " + stats.ultima.tsLabel : ""}` };
+    }
+
+    // (7) contagem geral
+    if (q.includes("quant") || q.includes("total") || q.includes("numero") || q.includes("quantidade")) {
+      if (q.includes("empresa")) {
+        const t = analytics.totaisGerais(empresas);
+        return { text: `Ha ${t.empresas} empresa(s) monitorada(s), com ${t.lojas} loja(s) no total.` };
       }
-      const seriesNames =
-        data.telemetriaSeries && data.telemetriaSeries.length
-          ? data.telemetriaSeries.map((s) => s.label).join(", ")
-          : "—";
-      return {
-        text:
-          `Telemetria do dispositivo ${data.telemetriaDispositivoId || "—"} ` +
-          `(série principal "Temperatura Ambiente", ${stats.n} leituras válidas, nulos do fim descartados):\n\n` +
-          `• média: ${stats.avg} °C\n• mínimo: ${stats.min} °C\n• máximo: ${stats.max} °C\n` +
-          `• última leitura: ${stats.ultima.valor} em ${stats.ultima.tsLabel || stats.ultima.ts.toLocaleString("pt-BR")}\n\n` +
-          `Séries disponíveis no dispositivo: ${seriesNames}.`,
-      };
+      if (q.includes("loja") || q.includes("unidade")) {
+        return { text: `Ha ${data.unidades.length} loja(s)/unidade(s) monitorada(s).` };
+      }
+      const crit = ativos.filter(isCrit).length;
+      return { text: `Ha ${ativos.length} alarme(s) ativo(s) no momento, sendo ${crit} critico(s) (Alta + Critica). Monitorando ${data.unidades.length} loja(s).` };
     }
 
-    /* (5) Quantos alarmes */
-    if (q.includes("quantos") || q.includes("total") || q.includes("numero")) {
-      const ativos = data.alarmes.filter((a) => a.ativo);
-      const criticos = ativos.filter((a) => a.criticidade === "Alta").length;
-      return {
-        text:
-          `Há ${ativos.length} alarme(s) ativo(s) no momento, ` +
-          `sendo ${criticos} de criticidade Alta. ` +
-          `Total de unidades monitoradas: ${data.unidades.length}.`,
-      };
-    }
-
-    /* fallback: retorna o melhor chunk como contexto */
-    if (retrieved.length) {
-      return {
-        text:
-          "Não tenho uma resposta agregada exata para isso, mas os trechos mais relevantes ao que você perguntou são:\n\n" +
-          retrieved
-            .slice(0, 3)
-            .map((r, i) => `${i + 1}. ${r.chunk.text}`)
-            .join("\n\n"),
-      };
-    }
-
-    return {
-      text:
-        "Não encontrei dados relacionados a essa pergunta. " +
-        "Tente perguntas sobre alarmes críticos, lojas, contratos a vencer, sinal de vida ou temperatura.",
-    };
+    return null; // nenhuma intencao casou -> deixa a IA responder
   }
 
-  /* ---------- API pública ---------- */
+  /* Fallback quando a IA esta indisponivel e nao ha intencao factual clara. */
+  function fallbackChunks(retrieved) {
+    if (retrieved.length) {
+      return "Nao tenho um numero exato pra isso, mas os registros mais relevantes sao:\n\n" +
+        retrieved.slice(0, 3).map((r, i) => `${i + 1}. ${r.chunk.text}`).join("\n\n");
+    }
+    return "Nao encontrei dados sobre isso. Tente perguntar sobre alarmes criticos, lojas, empresas, contratos a vencer, sinal de vida ou temperatura.";
+  }
+
   function createEngine(data) {
     const chunks = buildChunks(data);
     const index = buildIndex(chunks);
@@ -332,52 +347,28 @@ window.GalileoRAG = (function (analytics) {
     return {
       chunksCount: chunks.length,
 
-      /* Pipeline RAG completo:
-       *   1. retrieve()   — TF-IDF cosseno, top-K chunks
-       *   2. callLLM()    — manda { question, chunks } para a function /api/llm
-       *                     que chama o Gemini 2.5 Flash com a chave do env
-       *   3. fallback     — se o LLM falhar (rede, quota, erro), usa o
-       *                     synthesize() baseado em regras como rede de segurança
-       *
-       * Retorna { answer, sources, source, model }.
-       */
+      /* factual-first: responde das regras quando a intencao e clara (sem
+       * gastar IA); so chama o Gemini para perguntas abertas. */
       async ask(question, k = 5) {
         const retrieved = retrieve(question, index, k);
+        const sources = retrieved.map((r) => ({
+          id: r.chunk.id, type: r.chunk.type,
+          score: Number(r.score.toFixed(3)), text: r.chunk.text,
+        }));
 
-        // Tentar LLM primeiro (se habilitado)
+        const factual = responderFactual(question, data);
+        if (factual) return { answer: factual.text, sources, source: "regras", model: null };
+
         if (cfg && cfg.llm && cfg.llm.enabled) {
           try {
             const llmResult = await callLLM(question, retrieved, cfg.llm);
-            return {
-              answer: llmResult.answer,
-              sources: retrieved.map((r) => ({
-                id: r.chunk.id,
-                type: r.chunk.type,
-                score: Number(r.score.toFixed(3)),
-                text: r.chunk.text,
-              })),
-              source: "llm",
-              model: llmResult.model,
-            };
+            return { answer: llmResult.answer, sources, source: "llm", model: llmResult.model };
           } catch (err) {
-            console.warn("[rag] LLM falhou, usando regras como fallback:", err.message);
-            // cai no fallback abaixo
+            console.warn("[rag] LLM indisponivel, usando fallback:", err.message);
           }
         }
 
-        // Fallback determinístico baseado em regras
-        const { text } = synthesize(question, retrieved, data);
-        return {
-          answer: text,
-          sources: retrieved.map((r) => ({
-            id: r.chunk.id,
-            type: r.chunk.type,
-            score: Number(r.score.toFixed(3)),
-            text: r.chunk.text,
-          })),
-          source: "rules",
-          model: null,
-        };
+        return { answer: fallbackChunks(retrieved), sources, source: "regras", model: null };
       },
     };
   }

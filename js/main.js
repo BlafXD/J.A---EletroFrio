@@ -96,6 +96,10 @@
       askRAG(q);
     });
 
+    document.querySelectorAll(".chat-chip").forEach((chip) => {
+      chip.addEventListener("click", () => askRAG(chip.textContent.trim()));
+    });
+
     // polling automático (alarmes/unidades a cada 5 min)
     setInterval(() => {
       if (state.data) {

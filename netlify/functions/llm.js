@@ -117,12 +117,12 @@ function buildPrompt(question, chunks) {
     .map((c, i) => `[${i + 1}] (${c.type || "info"}) ${c.text}`)
     .join("\n\n");
 
-  return `Você é um assistente especializado em monitoramento de refrigeração comercial da plataforma Galileo (EletroFrio).
-Responda à pergunta do operador usando APENAS as informações dos trechos numerados abaixo.
-Se a informação não estiver disponível nos trechos, diga isso claramente em vez de inventar.
-Cite os números dos trechos entre colchetes quando relevante (ex: "[1] indica que...").
-Seja conciso, técnico e direto — máximo 6 frases.
-Use formatação simples (sem markdown elaborado), em português do Brasil.
+  return `Você é o assistente do Freezer Controle, plataforma de monitoramento de refrigeração comercial.
+O operador costuma fazer perguntas abertas ou analíticas (perguntas diretas de contagem e listagem já são respondidas automaticamente pelo sistema).
+Responda usando APENAS as informações dos trechos numerados abaixo. Se algo não estiver nos trechos, diga isso claramente, sem inventar.
+Quando útil, relacione os dados (por exemplo, lojas críticas e contratos a vencer) para dar uma leitura da situação.
+Cite os números dos trechos entre colchetes quando fizer sentido (ex: "[1] mostra...").
+Seja conciso e direto, em português do Brasil, sem markdown elaborado — no máximo 6 frases.
 
 Trechos disponíveis:
 ${chunkText}

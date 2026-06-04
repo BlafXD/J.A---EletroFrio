@@ -259,3 +259,8 @@
 .cel-tempo { font-variant-numeric: tabular-nums; color: var(--muted-foreground); font-size: 0.82rem; text-align: right; }
 .alarmes-empty { padding: 3rem 1rem; text-align: center; color: var(--muted-foreground); }
 .admin-resumo { font-size: 0.85rem; color: var(--muted-foreground); margin-top: 0.9rem; }
+
+/* ---------- Chips de perguntas sugeridas (assistente) ---------- */
+.chat__chips { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 0.9rem; }
+.chat-chip { padding: 0.42rem 0.8rem; border-radius: var(--radius-full); font-size: 0.8rem; font-weight: 600; background: var(--muted); border: 1px solid var(--border); color: var(--muted-foreground); transition: background .15s, color .15s, border-color .15s; }
+.chat-chip:hover { background: var(--tint-primary); color: var(--primary); border-color: var(--accent); }
