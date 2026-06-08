@@ -11,7 +11,7 @@
  * você pode RESPONDER no WhatsApp e o chatbot já terá o contexto. Ótimo
  * para demonstrar o ciclo inteiro ao vivo sem esperar o cron.
  *
- * Env: TWILIO_*, ALERT_WHATSAPP_TO, GEMINI_API_KEY
+ * Env: TWILIO_*, ALERT_WHATSAPP_TO, ANTHROPIC_API_KEY
  * --------------------------------------------------------------
  */
 

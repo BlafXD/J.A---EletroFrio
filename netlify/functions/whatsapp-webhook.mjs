@@ -7,11 +7,11 @@
  *   1. recupera o CONTEXTO do último alarme notificado àquele número
  *      (Blobs — gravado pelo alarmes-monitor)
  *   2. rebusca a telemetria ATUAL do dispositivo daquele alarme
- *   3. pede ao Gemini uma resposta no contexto do alarme + telemetria
+ *   3. pede ao Claude uma resposta no contexto do alarme + telemetria
  *   4. responde via TwiML
  *
  * Não precisa de credenciais Twilio (resposta via TwiML é só o corpo HTTP).
- * Usa GEMINI_API_KEY.
+ * Usa ANTHROPIC_API_KEY.
  * --------------------------------------------------------------
  */
 
@@ -83,7 +83,7 @@ export default async (req) => {
     }
   }
 
-  // 3. resposta no contexto (fallback se Gemini indisponível)
+  // 3. resposta no contexto (fallback se Claude indisponível)
   const resposta =
     (await responderPergunta(pergunta, ctx, resumoAtual)) ||
     `Sobre o alarme em ${ctx.dispositivoNm || "seu equipamento"}: ${ctx.diagnostico || "verifique o equipamento."}`;

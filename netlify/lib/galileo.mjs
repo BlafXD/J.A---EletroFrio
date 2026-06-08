@@ -5,14 +5,15 @@
  * endpoint; o esbuild o inclui no bundle ao seguir os imports.
  *
  * Centraliza: coleta dos endpoints, normalização, análise de
- * telemetria, chamadas ao Gemini e envio via Twilio.
+ * telemetria, chamadas ao Claude e envio via Twilio.
  * --------------------------------------------------------------
  */
 
+import Anthropic from "@anthropic-ai/sdk";
+
 export const GALILEO_BASE =
   "https://credenciamento.eletrofrio.com.br:5900/galileo/api/api_hackathon";
-const GEMINI_MODEL = "gemini-2.5-flash-lite";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const CLAUDE_MODEL = "claude-haiku-4-5";
 
 /* ===================== coleta ===================== */
 export async function fetchAlarmes() {
@@ -192,9 +193,9 @@ export function resumirTelemetria(a) {
   return cab + linhas.join("\n");
 }
 
-/* ===================== Gemini ===================== */
+/* ===================== Claude ===================== */
 /* Diagnóstico FACTUAL por regras — sem IA, 100% baseado na telemetria real.
- * Serve de fallback quando o Gemini está fora (quota esgotada) e também
+ * Serve de fallback quando o Claude está fora (quota/erro) e também
  * alimenta a página da loja. Como usa só números medidos, não há como
  * "alucinar": ou descreve o que a telemetria mostra, ou diz que não há leitura. */
 export function diagnosticoFactual(alarme, analise) {
@@ -254,61 +255,33 @@ function acaoRecomendada(alarme, grave) {
   return grave ? base + "; se não normalizar rapidamente, acionar a assistência técnica" : base;
 }
 
-export async function callGemini(prompt, maxTokens = 800) {
-  const apiKey = process.env.GEMINI_API_KEY;
+export async function callClaude(prompt, maxTokens = 800) {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.error("[gemini] GEMINI_API_KEY ausente no ambiente da function");
+    console.error("[claude] ANTHROPIC_API_KEY ausente no ambiente da function");
     return null;
   }
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), 10000);
+  // timeout/retries limitados para caber na janela curta da function
+  const client = new Anthropic({ apiKey, timeout: 10000, maxRetries: 1 });
   try {
-    const res = await fetch(GEMINI_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          temperature: 0.25,
-          maxOutputTokens: maxTokens,
-          topP: 0.95,
-          // Gemini 2.5 Flash "pensa" antes de responder e isso consome o
-          // orçamento de tokens. Zeramos o thinking para a resposta sair
-          // direto (mais rápido e sem estourar tokens só no raciocínio).
-          thinkingConfig: { thinkingBudget: 0 },
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-        ],
-      }),
-      signal: controller.signal,
+    const msg = await client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: maxTokens,
+      messages: [{ role: "user", content: prompt }],
     });
-    if (!res.ok) {
-      console.error("[gemini] erro HTTP", res.status, await res.text().catch(() => ""));
-      return null;
-    }
-    const data = await res.json();
-    const cand = data.candidates?.[0];
-    const parts = cand?.content?.parts || [];
-    const txt = parts.map((p) => p.text || "").join("").trim();
+    const txt = (msg.content || [])
+      .filter((b) => b.type === "text")
+      .map((b) => b.text)
+      .join("")
+      .trim();
     if (!txt) {
-      // Não houve texto: registra o motivo para diagnóstico nos logs do Netlify
-      console.error(
-        "[gemini] resposta sem texto. finishReason:",
-        cand?.finishReason,
-        "| blockReason:",
-        data.promptFeedback?.blockReason
-      );
+      // Sem texto: registra o motivo para diagnóstico nos logs do Netlify
+      console.error("[claude] resposta sem texto. stop_reason:", msg.stop_reason);
     }
     return txt || null;
   } catch (e) {
-    console.error("[gemini] falha/timeout:", e.message);
+    console.error("[claude] falha/timeout:", e.message);
     return null;
-  } finally {
-    clearTimeout(t);
   }
 }
 
@@ -333,7 +306,7 @@ Responda em português do Brasil, no máximo 5 frases curtas, cobrindo:
 2) causa(s) provável(is);
 3) ação recomendada.
 Use os números da telemetria. NÃO invente dados que não estão acima. Tom técnico mas claro. Sem saudações.`;
-  const r = await callGemini(prompt, 700);
+  const r = await callClaude(prompt, 700);
   return r;
 }
 
@@ -352,7 +325,7 @@ ${resumoTelemetriaAtual || contexto.resumoTelemetria || "indisponível"}
 O responsável perguntou: "${pergunta}"
 
 Responda em português do Brasil, de forma clara e útil, no máximo 4 frases curtas. Baseie-se no contexto e na telemetria. Se a pergunta fugir do tema, responda com o que for possível a partir dos dados. Não invente. Sem saudações longas.`;
-  const r = await callGemini(prompt, 600);
+  const r = await callClaude(prompt, 600);
   return r;
 }
 

@@ -5,7 +5,7 @@
  * Roda a cada 5 minutos. Para cada alarme crítico NOVO:
  *   1. usa o dispositivoId do alarme para buscar a telemetria dele
  *   2. analisa a telemetria (temperatura vs setpoint, tendência, etc)
- *   3. pede ao Gemini um diagnóstico técnico do problema
+ *   3. pede ao Claude um diagnóstico técnico do problema
  *   4. envia ao responsável: cabeçalho do alarme + diagnóstico da IA
  *   5. salva o contexto (Blobs) para o chatbot responder perguntas depois
  *
@@ -13,7 +13,7 @@
  * Contexto do chat via Blobs (store "galileo-chat-contexto").
  *
  * Env: TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_WHATSAPP_FROM,
- *      ALERT_WHATSAPP_TO, GEMINI_API_KEY
+ *      ALERT_WHATSAPP_TO, ANTHROPIC_API_KEY
  * --------------------------------------------------------------
  */
 
@@ -33,7 +33,7 @@ const MAX_POR_EXECUCAO = 3; // máx. de alarmes PROCESSADOS por execução (limi
 
 // Interruptores via env var (sem redeploy: muda no painel do Netlify e vale no próximo ciclo).
 //   ALERTS_ENABLED=false        → desliga TODO envio automático de WhatsApp (kill switch)
-//   AI_DIAGNOSIS_ENABLED=false  → não chama o Gemini; usa só o diagnóstico factual (zero 429)
+//   AI_DIAGNOSIS_ENABLED=false  → não chama o Claude; usa só o diagnóstico factual (zero custo de IA)
 const ALERTS_ENABLED = String(process.env.ALERTS_ENABLED ?? "true").toLowerCase() !== "false";
 const AI_DIAGNOSIS_ENABLED = String(process.env.AI_DIAGNOSIS_ENABLED ?? "true").toLowerCase() !== "false";
 
@@ -100,7 +100,7 @@ export default async () => {
 
     // 3. o diagnóstico FACTUAL por regras é sempre a base (usa os números reais
     //    da telemetria, não inventa). A IA só entra se habilitada — assim, com
-    //    AI_DIAGNOSIS_ENABLED=false, o Gemini não é chamado e não há nenhum 429.
+    //    AI_DIAGNOSIS_ENABLED=false, o Claude não é chamado (zero custo de IA).
     let diagnostico = diagnosticoFactual(a, analise);
     if (AI_DIAGNOSIS_ENABLED) {
       const diagnosticoIA = await gerarDiagnostico(a, resumoTel);
