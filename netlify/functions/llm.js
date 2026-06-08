@@ -1,18 +1,19 @@
 /* netlify/functions/llm.js
  * --------------------------------------------------------------
  * Recebe { question, chunks } do front, monta prompt aumentado
- * e chama o Gemini 2.5 Flash. Retorna { answer, model }.
+ * e chama o Claude Haiku 4.5. Retorna { answer, model }.
  *
- * A chave fica em process.env.GEMINI_API_KEY (variável configurada
+ * A chave fica em process.env.ANTHROPIC_API_KEY (variável configurada
  * no Netlify env vars). NUNCA expor ao client.
  *
  * Esta function é o estágio "Generation" do pipeline RAG:
- *   front → retrieval (TF-IDF) → top-K chunks → llm.js → Gemini → resposta
+ *   front → retrieval (TF-IDF) → top-K chunks → llm.js → Claude → resposta
  * --------------------------------------------------------------
  */
 
-const GEMINI_MODEL = "gemini-2.5-flash-lite";
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`;
+const Anthropic = require("@anthropic-ai/sdk");
+
+const CLAUDE_MODEL = "claude-haiku-4-5";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -29,10 +30,10 @@ exports.handler = async (event) => {
     return jsonResponse(405, { error: "Method not allowed" });
   }
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     return jsonResponse(500, {
-      error: "GEMINI_API_KEY não configurada nas variáveis de ambiente do Netlify",
+      error: "ANTHROPIC_API_KEY não configurada nas variáveis de ambiente do Netlify",
     });
   }
 
@@ -54,50 +55,23 @@ exports.handler = async (event) => {
   const prompt = buildPrompt(question, chunks);
 
   try {
-    const upstream = await fetch(GEMINI_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        contents: [
-          {
-            role: "user",
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.2,    // baixa pra respostas factuais e determinísticas
-          maxOutputTokens: 800,
-          topP: 0.95,
-        },
-        safetySettings: [
-          { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_ONLY_HIGH" },
-          { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_ONLY_HIGH" },
-        ],
-      }),
+    const client = new Anthropic({ apiKey, timeout: 10000, maxRetries: 1 });
+    const msg = await client.messages.create({
+      model: CLAUDE_MODEL,
+      max_tokens: 800,
+      messages: [{ role: "user", content: prompt }],
     });
 
-    if (!upstream.ok) {
-      const errText = await upstream.text();
-      console.error("[llm] Gemini error:", upstream.status, errText);
-      return jsonResponse(upstream.status, {
-        error: `Gemini API erro ${upstream.status}`,
-        detail: errText.slice(0, 500),
-      });
-    }
-
-    const data = await upstream.json();
-    const answer = extractText(data);
+    const answer = extractText(msg);
 
     return jsonResponse(200, {
       answer,
-      model: GEMINI_MODEL,
+      model: CLAUDE_MODEL,
     });
   } catch (err) {
-    console.error("[llm] erro fetching Gemini:", err);
+    console.error("[llm] erro ao contatar Claude:", err);
     return jsonResponse(502, {
-      error: "falha ao contatar Gemini",
+      error: "falha ao contatar Claude",
       message: err.message,
     });
   }
@@ -132,16 +106,14 @@ Pergunta do operador: ${question}
 Resposta:`;
 }
 
-function extractText(geminiResponse) {
+function extractText(msg) {
   try {
-    const candidates = geminiResponse.candidates || [];
-    if (!candidates.length) {
-      // pode ter sido bloqueado por safety
-      const block = geminiResponse.promptFeedback?.blockReason;
-      return block ? `Resposta bloqueada por filtro de segurança (${block}).` : "Sem resposta do modelo.";
-    }
-    const parts = candidates[0].content?.parts || [];
-    const text = parts.map((p) => p.text || "").join("").trim();
+    const parts = msg.content || [];
+    const text = parts
+      .filter((b) => b.type === "text")
+      .map((b) => b.text || "")
+      .join("")
+      .trim();
     return text || "Resposta vazia do modelo.";
   } catch (e) {
     return "Erro ao processar resposta do modelo.";
