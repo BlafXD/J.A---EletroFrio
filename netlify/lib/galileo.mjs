@@ -285,6 +285,15 @@ export async function callClaude(prompt, maxTokens = 800) {
   }
 }
 
+// O WhatsApp usa *negrito* com um asterisco; o Claude às vezes responde em
+// markdown (**negrito**, ## títulos), que apareceria literal na mensagem.
+function mdParaWhatsApp(s) {
+  if (!s) return s;
+  return s
+    .replace(/\*\*(.+?)\*\*/g, "*$1*")
+    .replace(/^#{1,6}\s*/gm, "");
+}
+
 // Diagnóstico técnico de um alarme com base na telemetria do dispositivo
 export async function gerarDiagnostico(alarme, resumoTelemetria) {
   const loja = alarme.lojaApelido || alarme.lojaNm || `loja#${alarme.lojaId}`;
@@ -307,7 +316,7 @@ Responda em português do Brasil, no máximo 5 frases curtas, cobrindo:
 3) ação recomendada.
 Use os números da telemetria. NÃO invente dados que não estão acima. Tom técnico mas claro. Sem saudações.`;
   const r = await callClaude(prompt, 700);
-  return r;
+  return mdParaWhatsApp(r);
 }
 
 // Resposta do chatbot a uma pergunta do responsável, no contexto do alarme
@@ -326,7 +335,7 @@ O responsável perguntou: "${pergunta}"
 
 Responda em português do Brasil, de forma clara e útil, no máximo 4 frases curtas. Baseie-se no contexto e na telemetria. Se a pergunta fugir do tema, responda com o que for possível a partir dos dados. Não invente. Sem saudações longas.`;
   const r = await callClaude(prompt, 600);
-  return r;
+  return mdParaWhatsApp(r);
 }
 
 /* ===================== mensagem ===================== */
