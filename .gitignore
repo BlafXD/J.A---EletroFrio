@@ -8,3 +8,6 @@ node_modules
 .env
 .env.local
 .env.*.local
+
+# Artigo acadêmico e slides (não publicar no site — publish = ".")
+ARTIGO/
